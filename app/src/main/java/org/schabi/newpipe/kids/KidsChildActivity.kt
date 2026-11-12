@@ -3,6 +3,7 @@
  */
 package org.schabi.newpipe.kids
 
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
@@ -19,6 +20,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -107,6 +109,7 @@ class KidsChildActivity : AppCompatActivity() {
             (View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR).inv()
         window.statusBarColor = 0xFF05065C.toInt()
         window.navigationBarColor = Color.BLACK
+        if (isLandscape()) window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         chrome = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = KidsUi.childBackground()
@@ -114,7 +117,14 @@ class KidsChildActivity : AppCompatActivity() {
         header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(if (isLandscape()) 4 else 9), dp(16), dp(if (isLandscape()) 4 else 9))
+            val verticalPadding = if (isShortLandscape()) {
+                0
+            } else if (isLandscape()) {
+                4
+            } else {
+                9
+            }
+            setPadding(dp(16), dp(verticalPadding), dp(16), dp(verticalPadding))
         }
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -134,7 +144,14 @@ class KidsChildActivity : AppCompatActivity() {
         }
         chrome.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         chrome.addView(contentScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        chrome.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(if (isLandscape()) 56 else 68)))
+        val navigationHeight = if (isShortLandscape()) {
+            48
+        } else if (isLandscape()) {
+            56
+        } else {
+            68
+        }
+        chrome.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(navigationHeight)))
         setContentView(chrome)
         renderHeader(null)
         navigation.visibility = View.GONE
@@ -286,7 +303,7 @@ class KidsChildActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         window.statusBarColor = 0xFF05065C.toInt()
         header.visibility = View.VISIBLE
-        root.setPadding(dp(16), dp(4), dp(16), dp(20))
+        root.setPadding(dp(16), dp(if (isShortLandscape()) 0 else 4), dp(16), dp(20))
         openSource = null
         displayedState = state
         renderedHomeState = state
@@ -368,14 +385,14 @@ class KidsChildActivity : AppCompatActivity() {
                     Tab.PROFILE -> R.id.kids_nav_profile
                 }
                 gravity = Gravity.CENTER
-                textSize = 11f
-                setPadding(dp(2), dp(5), dp(2), dp(4))
+                textSize = if (isShortLandscape()) 10f else 11f
+                setPadding(dp(2), dp(if (isShortLandscape()) 1 else 5), dp(2), dp(if (isShortLandscape()) 1 else 4))
                 setTextColor(if (selected) Color.WHITE else 0xFFB8B7C4.toInt())
                 contentDescription = getString(R.string.kids_nav_description, getString(title))
                 isSelected = selected
                 if (tab == Tab.PROFILE) {
                     displayedState?.profiles?.firstOrNull { it.id == displayedState?.selectedProfileId }?.let {
-                        KidsAvatars.icon(this, it)
+                        KidsAvatars.icon(this, it, size = if (isShortLandscape()) 24 else 28)
                     }
                 } else {
                     KidsUi.icon(this, icon, if (selected) Color.WHITE else 0xFFB8B7C4.toInt(), top = true, size = 24)
@@ -701,6 +718,13 @@ class KidsChildActivity : AppCompatActivity() {
 
     private fun showHome(state: KidsState, profile: ChildProfile) {
         val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val chipHeight = if (isShortLandscape()) {
+            34
+        } else if (isLandscape()) {
+            38
+        } else {
+            44
+        }
         listOf(
             Category.ALL to R.string.kids_approved_for_you,
             Category.VIDEOS to R.string.kids_category_videos,
@@ -711,7 +735,8 @@ class KidsChildActivity : AppCompatActivity() {
             val chip = KidsUi.button(this, getString(title), KidsUi.ButtonStyle.GHOST).apply {
                 gravity = Gravity.CENTER
                 isSelected = selected
-                minimumHeight = dp(if (isLandscape()) 38 else 44)
+                minimumHeight = dp(chipHeight)
+                if (isShortLandscape()) setPadding(dp(12), dp(4), dp(12), dp(4))
                 background = KidsUi.ripple(this@KidsChildActivity, if (selected) Color.WHITE else 0x663B2E9C, 14)
                 setTextColor(if (selected) KidsUi.ink else Color.WHITE)
                 if (value == Category.ALL) KidsUi.icon(this, R.drawable.ic_kids_star, if (selected) KidsUi.ink else Color.WHITE, size = 20)
@@ -720,7 +745,7 @@ class KidsChildActivity : AppCompatActivity() {
                     display(displayedState ?: state)
                 }
             }
-            chips.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(if (isLandscape()) 38 else 44)).apply { marginEnd = dp(8) })
+            chips.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(chipHeight)).apply { marginEnd = dp(8) })
         }
         val scroll = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -728,7 +753,7 @@ class KidsChildActivity : AppCompatActivity() {
         }
         addBlock(root, scroll, 2)
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        addBlock(root, results, 8)
+        addBlock(root, results, if (isLandscape()) 0 else 8)
         renderLibrary(state, profile, results, "", category, favorites = false)
     }
 
@@ -856,21 +881,36 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun <T> addCards(target: LinearLayout, items: List<T>, card: (T, Int) -> View) {
-        val columns = if (resources.configuration.screenWidthDp >= 600) 2 else 1
-        val available = resources.configuration.screenWidthDp - 32 - (columns - 1) * 12
-        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
-        val imageHeight = if (compact) 82 else ((available / columns - 16) * 9 / 16).coerceIn(130, 250)
+        val configuration = resources.configuration
+        val columns = KidsGridLayout.columns(configuration.screenWidthDp, configuration.smallestScreenWidthDp)
+        val sideInset = KidsGridLayout.extraSideInset(configuration.screenWidthDp, configuration.smallestScreenWidthDp, columns)
+        val imageHeight = KidsGridLayout.thumbnailHeight(configuration.screenWidthDp, columns, sideInset)
         items.chunked(columns).forEach { rowItems ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val row = KidsCardRow(this)
             rowItems.forEachIndexed { index, item ->
-                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
+                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(KidsGridLayout.GAP), 1))
                 row.addView(card(item, imageHeight), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             }
-            if (rowItems.size < columns) {
-                row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
+            repeat(columns - rowItems.size) {
+                row.addView(Space(this), LinearLayout.LayoutParams(dp(KidsGridLayout.GAP), 1))
                 row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
             }
-            addBlock(target, row, 12)
+            target.addView(
+                row,
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    topMargin = dp(
+                        if (isShortLandscape()) {
+                            2
+                        } else if (isLandscape()) {
+                            6
+                        } else {
+                            12
+                        }
+                    )
+                    marginStart = dp(sideInset)
+                    marginEnd = dp(sideInset)
+                }
+            )
         }
     }
 
@@ -888,17 +928,16 @@ class KidsChildActivity : AppCompatActivity() {
         if (source.kind == SourceKind.PLAYLIST) {
             return playlistCard(state, profile, source, item, title, imageHeight, KidsCardMetadata.playlistPreview(source, library, videoCatalog))
         }
-        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
         val card = LinearLayout(this).apply {
             tag = "kids-source-${source.id.id}"
-            orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
             isClickable = true
             setOnClickListener { showSource(state, profile, source) }
         }
-        val imageSize = if (compact) 100 else 164
+        val imageSize = (imageHeight * 4 / 5).coerceAtLeast(48)
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = KidsUi.shape(this@KidsChildActivity, 0xFF53546D.toInt(), 100)
@@ -911,7 +950,7 @@ class KidsChildActivity : AppCompatActivity() {
             image,
             LinearLayout.LayoutParams(dp(imageSize), dp(imageSize)).apply {
                 gravity = Gravity.CENTER
-                setMargins(dp(12), dp(20), dp(12), dp(if (compact) 20 else 4))
+                setMargins(dp(12), dp(20), dp(12), dp(4))
             }
         )
         val textColumn = LinearLayout(this).apply {
@@ -919,8 +958,9 @@ class KidsChildActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
         }
         val titleButton = KidsUi.button(this, title, KidsUi.ButtonStyle.GHOST).apply {
+            tag = "kids-source-title-${source.id.id}"
             gravity = Gravity.CENTER
-            textSize = if (compact) 15f else 19f
+            textSize = if (imageHeight < 130) 15f else 19f
             setTextColor(Color.WHITE)
             maxLines = 2
             minHeight = 0
@@ -933,7 +973,7 @@ class KidsChildActivity : AppCompatActivity() {
         textColumn.addView(titleButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val subtitle = KidsUi.text(this, getString(R.string.kids_parent_kind_channel), 13f, 0xFFB7B7B7.toInt()).apply { gravity = Gravity.CENTER }
         textColumn.addView(subtitle, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
-        card.addView(textColumn, if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        card.addView(textColumn, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return card
     }
 
@@ -946,10 +986,9 @@ class KidsChildActivity : AppCompatActivity() {
         imageHeight: Int,
         preview: PlaylistCardPreview
     ): View {
-        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
         val card = LinearLayout(this).apply {
             tag = "kids-source-${source.id.id}"
-            orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
@@ -992,11 +1031,11 @@ class KidsChildActivity : AppCompatActivity() {
         }
         front.addView(badge, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.BOTTOM).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
         stack.addView(front, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { topMargin = dp(10) })
-        val stackWidth = if (compact) dp(imageHeight * 16 / 9) else ViewGroup.LayoutParams.MATCH_PARENT
-        card.addView(stack, LinearLayout.LayoutParams(stackWidth, dp(imageHeight + 10)).apply { setMargins(dp(8), dp(8), dp(if (compact) 0 else 8), 0) })
+        card.addView(stack, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(imageHeight + 10)).apply { setMargins(dp(8), dp(8), dp(8), 0) })
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val name = KidsUi.button(this, title, KidsUi.ButtonStyle.GHOST).apply {
-            textSize = if (compact) 14f else 17f
+            tag = "kids-source-title-${source.id.id}"
+            textSize = if (imageHeight < 130) 15f else 17f
             setTextColor(Color.WHITE)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
@@ -1009,7 +1048,7 @@ class KidsChildActivity : AppCompatActivity() {
         labels.addView(name, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val subtitle = item?.uploaderName?.let { getString(R.string.kids_playlist_with_uploader, it) } ?: getString(R.string.kids_parent_kind_playlist)
         labels.addView(KidsUi.text(this, subtitle, 13f, 0xFFB7B7B7.toInt()), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(12), 0, dp(8), dp(12)) })
-        card.addView(labels, if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        card.addView(labels, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return card
     }
 
@@ -1018,9 +1057,9 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun videoCard(item: ParentSearchItem, imageHeight: Int, action: () -> Unit): View {
-        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
         val card = LinearLayout(this).apply {
-            orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            tag = "kids-video-card-${item.id.id}"
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
@@ -1047,8 +1086,7 @@ class KidsChildActivity : AppCompatActivity() {
             }
             thumbnail.addView(badge, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) })
         }
-        val thumbnailWidth = if (compact) dp(imageHeight * 16 / 9) else ViewGroup.LayoutParams.MATCH_PARENT
-        card.addView(thumbnail, LinearLayout.LayoutParams(thumbnailWidth, dp(imageHeight)).apply { setMargins(dp(8), dp(8), dp(if (compact) 0 else 8), 0) })
+        card.addView(thumbnail, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(imageHeight)).apply { setMargins(dp(8), dp(8), dp(8), 0) })
         val title = KidsUi.button(this, item.title, KidsUi.ButtonStyle.GHOST).apply {
             tag = "kids-video-${item.id.id}"
             textSize = 16f
@@ -1059,8 +1097,7 @@ class KidsChildActivity : AppCompatActivity() {
             minimumHeight = dp(56)
             setOnClickListener { action() }
         }
-        val titleLayout = if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        card.addView(title, titleLayout)
+        card.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return card
     }
 
@@ -1520,11 +1557,34 @@ class KidsChildActivity : AppCompatActivity() {
 
     private fun isLandscape(): Boolean = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    private fun isShortLandscape(): Boolean = isLandscape() && resources.configuration.screenHeightDp < 360
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
         private const val SETUP_REQUEST = 1
         private const val SOURCE_REFRESH_MILLIS = 15 * 60_000L
         private const val RESULT_PAGE_SIZE = 40
+    }
+}
+
+/** Measures each card naturally, then aligns the backgrounds within its row. */
+private class KidsCardRow(context: Context) : LinearLayout(context) {
+    init {
+        orientation = HORIZONTAL
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val height = (measuredHeight - paddingTop - paddingBottom).coerceAtLeast(0)
+        for (index in 0 until childCount) {
+            val child = getChildAt(index)
+            if (child !is Space && child.visibility != View.GONE && child.measuredHeight != height) {
+                child.measure(
+                    View.MeasureSpec.makeMeasureSpec(child.measuredWidth, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
+                )
+            }
+        }
     }
 }

@@ -240,3 +240,10 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   only on videos visible to the active child.
 - [x] Show known video durations and playlist creator names when available.
 - [ ] Review the updated content cards on a physical Android device.
+
+## 10. Responsive child browsing
+
+- [x] Keep channel, video, and playlist cards vertical in portrait and landscape.
+- [x] Adapt the number of columns to the available width, including three on
+  phone landscape and additional columns on larger tablets.
+- [ ] Review the responsive grid on a physical phone and tablet.
