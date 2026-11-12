@@ -8,7 +8,9 @@ import org.schabi.newpipe.extractor.InfoItem
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.util.image.ImageStrategy
 
 @Serializable
@@ -20,7 +22,9 @@ data class ParentSearchItem(
     val id: StoredContentId,
     val title: String,
     val url: String,
-    val thumbnailUrl: String? = null
+    val thumbnailUrl: String? = null,
+    val durationSeconds: Long? = null,
+    val uploaderName: String? = null
 ) {
     init {
         require(title.isNotBlank() && url.isNotBlank())
@@ -81,7 +85,15 @@ object ParentContentSearch {
 
                 else -> return null
             }
-            ParentSearchItem(kind, id, item.name, url, ImageStrategy.imageListToDbUrl(item.thumbnails))
+            ParentSearchItem(
+                kind,
+                id,
+                item.name,
+                url,
+                ImageStrategy.imageListToDbUrl(item.thumbnails),
+                durationSeconds = (item as? StreamInfoItem)?.duration?.takeIf { it > 0 },
+                uploaderName = (item as? PlaylistInfoItem)?.uploaderName?.takeIf { it.isNotBlank() }
+            )
         } catch (_: Exception) {
             null
         }

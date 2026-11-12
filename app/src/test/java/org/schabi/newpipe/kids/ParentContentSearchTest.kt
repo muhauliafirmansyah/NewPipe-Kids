@@ -19,13 +19,17 @@ class ParentContentSearchTest {
     @Test fun `search items get validated YouTube identities`() {
         val service = ServiceList.YouTube.serviceId
         val stream = StreamInfoItem(service, "https://youtu.be/e_04ZrNroTo", "Song", StreamType.VIDEO_STREAM)
+        stream.duration = 599
         val result = requireNotNull(ParentContentSearch.toItem(stream))
         assertEquals(ParentContentKind.VIDEO, result.kind)
+        assertEquals(599L, result.durationSeconds)
         assertEquals(VideoIdentity.youtube("e_04ZrNroTo"), result.id)
         val channel = ChannelInfoItem(service, "https://www.youtube.com/channel/UCTwECeGqMZee77BjdoYtI2Q", "Channel")
         assertEquals(ParentContentKind.CHANNEL, ParentContentSearch.toItem(channel)?.kind)
         val playlist = PlaylistInfoItem(service, "https://www.youtube.com/playlist?list=PL8dPuuaLjXtOAKed_MxxWBNaPno5h3Zs8", "Playlist")
+        playlist.uploaderName = "Science channel"
         assertEquals(ParentContentKind.PLAYLIST, ParentContentSearch.toItem(playlist)?.kind)
+        assertEquals("Science channel", ParentContentSearch.toItem(playlist)?.uploaderName)
     }
 
     @Test fun `search stores an appropriately sized thumbnail for larger cards`() {

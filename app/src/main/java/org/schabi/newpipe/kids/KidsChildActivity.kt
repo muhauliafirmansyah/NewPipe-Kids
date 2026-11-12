@@ -33,6 +33,7 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
@@ -79,6 +80,11 @@ class KidsChildActivity : AppCompatActivity() {
     private var playbackGeneration = 0
     private var playback: ActivePlayback? = null
     private var incomingVideo: StoredContentId? = null
+
+    private sealed class LibraryCard {
+        data class Source(val value: StoredSource) : LibraryCard()
+        data class Video(val value: ParentSearchItem) : LibraryCard()
+    }
 
     private data class ActivePlayback(
         val profileId: String,
@@ -793,22 +799,33 @@ class KidsChildActivity : AppCompatActivity() {
             activeTab == Tab.SEARCH -> getString(R.string.kids_category_videos)
             else -> getString(R.string.kids_videos_heading)
         }
-        if (sources.isNotEmpty()) {
-            if (activeTab != Tab.HOME) section(target, getString(R.string.kids_collections_heading))
-            addSourceGrid(target, state, profile, sources)
-        }
-        if (videos.isNotEmpty()) {
-            if (activeTab != Tab.HOME && !isLandscape()) section(target, videosHeading)
-            addVideoGrid(target, videos.take(shown)) { item -> openVideo(item) }
-            if (shown < videos.size) {
-                val more = KidsUi.button(this, getString(R.string.kids_parent_more), KidsUi.ButtonStyle.SOFT).apply {
-                    gravity = Gravity.CENTER
-                    setOnClickListener {
-                        if (onMore != null) onMore(shown + RESULT_PAGE_SIZE) else renderLibrary(state, profile, target, query, filter, favorites, shown + RESULT_PAGE_SIZE)
-                    }
-                }
-                addBlock(target, more, 12)
+        if (activeTab == Tab.HOME && filter == Category.ALL && sources.isNotEmpty() && videos.isNotEmpty()) {
+            val cards = mutableListOf<LibraryCard>()
+            val visibleVideos = videos.take(shown)
+            sources.forEachIndexed { index, source ->
+                cards.add(LibraryCard.Source(source))
+                visibleVideos.getOrNull(index)?.let { cards.add(LibraryCard.Video(it)) }
             }
+            visibleVideos.drop(sources.size).forEach { cards.add(LibraryCard.Video(it)) }
+            addMixedGrid(target, state, profile, cards)
+        } else {
+            if (sources.isNotEmpty()) {
+                if (activeTab != Tab.HOME) section(target, getString(R.string.kids_collections_heading))
+                addSourceGrid(target, state, profile, sources)
+            }
+            if (videos.isNotEmpty()) {
+                if (activeTab != Tab.HOME && !isLandscape()) section(target, videosHeading)
+                addVideoGrid(target, videos.take(shown)) { item -> openVideo(item) }
+            }
+        }
+        if (shown < videos.size) {
+            val more = KidsUi.button(this, getString(R.string.kids_parent_more), KidsUi.ButtonStyle.SOFT).apply {
+                gravity = Gravity.CENTER
+                setOnClickListener {
+                    if (onMore != null) onMore(shown + RESULT_PAGE_SIZE) else renderLibrary(state, profile, target, query, filter, favorites, shown + RESULT_PAGE_SIZE)
+                }
+            }
+            addBlock(target, more, 12)
         }
         if (sources.isEmpty() && videos.isEmpty()) {
             val message = when {
@@ -821,15 +838,35 @@ class KidsChildActivity : AppCompatActivity() {
         }
     }
 
-    private fun addSourceGrid(target: LinearLayout, state: KidsState, profile: ChildProfile, sources: List<StoredSource>) {
-        val columns = if (resources.configuration.screenWidthDp >= 600) 2 else 1
-        sources.chunked(columns).forEach { items ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            items.forEachIndexed { index, source ->
-                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
-                row.addView(sourceCard(state, profile, source), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    private fun addMixedGrid(target: LinearLayout, state: KidsState, profile: ChildProfile, cards: List<LibraryCard>) {
+        val library = profile.approvedLibrary()
+        val catalog = state.catalog.filter { it.kind == ParentContentKind.VIDEO }.associateBy { it.id }
+        addCards(target, cards) { card, imageHeight ->
+            when (card) {
+                is LibraryCard.Source -> sourceCard(state, profile, card.value, imageHeight, library, catalog)
+                is LibraryCard.Video -> videoCard(card.value, imageHeight) { openVideo(card.value) }
             }
-            if (items.size < columns) {
+        }
+    }
+
+    private fun addSourceGrid(target: LinearLayout, state: KidsState, profile: ChildProfile, sources: List<StoredSource>) {
+        val library = profile.approvedLibrary()
+        val catalog = state.catalog.filter { it.kind == ParentContentKind.VIDEO }.associateBy { it.id }
+        addCards(target, sources) { source, imageHeight -> sourceCard(state, profile, source, imageHeight, library, catalog) }
+    }
+
+    private fun <T> addCards(target: LinearLayout, items: List<T>, card: (T, Int) -> View) {
+        val columns = if (resources.configuration.screenWidthDp >= 600) 2 else 1
+        val available = resources.configuration.screenWidthDp - 32 - (columns - 1) * 12
+        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
+        val imageHeight = if (compact) 82 else ((available / columns - 16) * 9 / 16).coerceIn(130, 250)
+        items.chunked(columns).forEach { rowItems ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            rowItems.forEachIndexed { index, item ->
+                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
+                row.addView(card(item, imageHeight), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            if (rowItems.size < columns) {
                 row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
                 row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
             }
@@ -837,12 +874,23 @@ class KidsChildActivity : AppCompatActivity() {
         }
     }
 
-    private fun sourceCard(state: KidsState, profile: ChildProfile, source: StoredSource): View {
+    private fun sourceCard(
+        state: KidsState,
+        profile: ChildProfile,
+        source: StoredSource,
+        imageHeight: Int,
+        library: ApprovedLibrary,
+        videoCatalog: Map<StoredContentId, ParentSearchItem>
+    ): View {
         val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
         val item = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }
         val title = item?.title ?: source.id.id
+        if (source.kind == SourceKind.PLAYLIST) {
+            return playlistCard(state, profile, source, item, title, imageHeight, KidsCardMetadata.playlistPreview(source, library, videoCatalog))
+        }
         val compact = isLandscape() && resources.configuration.screenHeightDp < 420
         val card = LinearLayout(this).apply {
+            tag = "kids-source-${source.id.id}"
             orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
@@ -853,12 +901,12 @@ class KidsChildActivity : AppCompatActivity() {
         val imageSize = if (compact) 100 else 164
         val image = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = KidsUi.shape(this@KidsChildActivity, 0xFF53546D.toInt(), if (source.kind == SourceKind.CHANNEL) 100 else 12)
+            background = KidsUi.shape(this@KidsChildActivity, 0xFF53546D.toInt(), 100)
             clipToOutline = true
-            contentDescription = getString(if (source.kind == SourceKind.CHANNEL) R.string.kids_channel_label else R.string.kids_playlist_label, title)
+            contentDescription = getString(R.string.kids_channel_label, title)
             setOnClickListener { showSource(state, profile, source) }
         }
-        CoilHelper.loadThumbnail(image, item?.thumbnailUrl)
+        CoilHelper.loadAvatar(image, item?.thumbnailUrl)
         card.addView(
             image,
             LinearLayout.LayoutParams(dp(imageSize), dp(imageSize)).apply {
@@ -879,35 +927,94 @@ class KidsChildActivity : AppCompatActivity() {
             minimumHeight = 0
             ellipsize = TextUtils.TruncateAt.END
             setPadding(dp(8), dp(4), dp(8), 0)
-            contentDescription = getString(if (source.kind == SourceKind.CHANNEL) R.string.kids_channel_label else R.string.kids_playlist_label, title)
+            contentDescription = getString(R.string.kids_channel_label, title)
             setOnClickListener { showSource(state, profile, source) }
         }
         textColumn.addView(titleButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val subtitle = KidsUi.text(this, getString(if (source.kind == SourceKind.CHANNEL) R.string.kids_parent_kind_channel else R.string.kids_parent_kind_playlist), 13f, 0xFFB7B7B7.toInt()).apply {
-            gravity = Gravity.CENTER
-        }
+        val subtitle = KidsUi.text(this, getString(R.string.kids_parent_kind_channel), 13f, 0xFFB7B7B7.toInt()).apply { gravity = Gravity.CENTER }
         textColumn.addView(subtitle, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(14) })
         card.addView(textColumn, if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return card
     }
 
-    private fun addVideoGrid(target: LinearLayout, videos: List<ParentSearchItem>, action: (ParentSearchItem) -> Unit) {
-        val columns = if (resources.configuration.screenWidthDp >= 600) 2 else 1
-        val available = resources.configuration.screenWidthDp - 32 - (columns - 1) * 12
+    private fun playlistCard(
+        state: KidsState,
+        profile: ChildProfile,
+        source: StoredSource,
+        item: ParentSearchItem?,
+        title: String,
+        imageHeight: Int,
+        preview: PlaylistCardPreview
+    ): View {
         val compact = isLandscape() && resources.configuration.screenHeightDp < 420
-        val imageHeight = if (compact) 82 else (available / columns * 9 / 16).coerceIn(130, 250)
-        videos.chunked(columns).forEach { items ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            items.forEachIndexed { index, item ->
-                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
-                row.addView(videoCard(item, imageHeight) { action(item) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            }
-            if (items.size < columns) {
-                row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
-                row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
-            }
-            addBlock(target, row, 12)
+        val card = LinearLayout(this).apply {
+            tag = "kids-source-${source.id.id}"
+            orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
+            clipToOutline = true
+            isClickable = true
+            setOnClickListener { showSource(state, profile, source) }
         }
+        val stack = FrameLayout(this).apply {
+            tag = "kids-playlist-thumbnail-${source.id.id}"
+            contentDescription = getString(R.string.kids_playlist_label, title)
+            setOnClickListener { showSource(state, profile, source) }
+        }
+        listOf(0xFF62636A.toInt() to 16, 0xFF414249.toInt() to 8).forEachIndexed { index, (color, inset) ->
+            stack.addView(
+                View(this).apply { background = KidsUi.shape(this@KidsChildActivity, color, 12) },
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(16)).apply { setMargins(dp(inset), dp(index * 5), dp(inset), 0) }
+            )
+        }
+        val front = FrameLayout(this).apply {
+            background = KidsUi.shape(this@KidsChildActivity, 0xFF53546D.toInt(), 12)
+            clipToOutline = true
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        front.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        CoilHelper.loadPlaylistThumbnail(image, preview.thumbnailUrl)
+        val badgeText = preview.visibleCount?.let { resources.getQuantityString(R.plurals.kids_playlist_video_count, it, it) }
+            ?: getString(R.string.kids_parent_kind_playlist)
+        val badge = KidsUi.text(this, badgeText, 11f, Color.WHITE, true).apply {
+            tag = "kids-playlist-count-${source.id.id}"
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            background = KidsUi.shape(this@KidsChildActivity, 0xD9000000.toInt(), 6)
+            val icon = ContextCompat.getDrawable(this@KidsChildActivity, R.drawable.ic_playlist_play)?.mutate()
+            icon?.setTint(Color.WHITE)
+            icon?.setBounds(0, 0, dp(16), dp(16))
+            setCompoundDrawablesRelative(icon, null, null, null)
+            compoundDrawablePadding = dp(4)
+        }
+        front.addView(badge, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.END or Gravity.BOTTOM).apply { setMargins(dp(6), dp(6), dp(6), dp(6)) })
+        stack.addView(front, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT).apply { topMargin = dp(10) })
+        val stackWidth = if (compact) dp(imageHeight * 16 / 9) else ViewGroup.LayoutParams.MATCH_PARENT
+        card.addView(stack, LinearLayout.LayoutParams(stackWidth, dp(imageHeight + 10)).apply { setMargins(dp(8), dp(8), dp(if (compact) 0 else 8), 0) })
+        val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val name = KidsUi.button(this, title, KidsUi.ButtonStyle.GHOST).apply {
+            textSize = if (compact) 14f else 17f
+            setTextColor(Color.WHITE)
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            minHeight = 0
+            minimumHeight = 0
+            setPadding(dp(12), dp(8), dp(8), dp(2))
+            contentDescription = getString(R.string.kids_playlist_label, title)
+            setOnClickListener { showSource(state, profile, source) }
+        }
+        labels.addView(name, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val subtitle = item?.uploaderName?.let { getString(R.string.kids_playlist_with_uploader, it) } ?: getString(R.string.kids_parent_kind_playlist)
+        labels.addView(KidsUi.text(this, subtitle, 13f, 0xFFB7B7B7.toInt()), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(12), 0, dp(8), dp(12)) })
+        card.addView(labels, if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        return card
+    }
+
+    private fun addVideoGrid(target: LinearLayout, videos: List<ParentSearchItem>, action: (ParentSearchItem) -> Unit) {
+        addCards(target, videos) { item, imageHeight -> videoCard(item, imageHeight) { action(item) } }
     }
 
     private fun videoCard(item: ParentSearchItem, imageHeight: Int, action: () -> Unit): View {
@@ -921,7 +1028,8 @@ class KidsChildActivity : AppCompatActivity() {
         }
         val thumbnail = FrameLayout(this).apply {
             tag = "kids-thumbnail-${item.id.id}"
-            setBackgroundColor(KidsUi.purpleLight)
+            background = KidsUi.shape(this@KidsChildActivity, KidsUi.purpleLight, 12)
+            clipToOutline = true
             setOnClickListener { action() }
             contentDescription = getString(R.string.kids_watch_description, item.title)
         }
@@ -931,35 +1039,27 @@ class KidsChildActivity : AppCompatActivity() {
         }
         thumbnail.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         CoilHelper.loadThumbnail(image, item.thumbnailUrl)
-        val service = runCatching { VideoIdentity.service(item.id.serviceId).serviceInfo.name }.getOrDefault("")
-        if (service.isNotBlank()) {
-            val badge = KidsUi.text(this, service, 10f, Color.WHITE, true).apply {
-                setPadding(dp(7), dp(4), dp(7), dp(4))
-                background = KidsUi.shape(this@KidsChildActivity, 0xCC20232D.toInt(), 8)
+        KidsCardMetadata.duration(item.durationSeconds)?.let { duration ->
+            val badge = KidsUi.text(this, duration, 11f, Color.WHITE, true).apply {
+                tag = "kids-duration-${item.id.id}"
+                setPadding(dp(5), dp(3), dp(5), dp(3))
+                background = KidsUi.shape(this@KidsChildActivity, 0xD9000000.toInt(), 5)
             }
-            thumbnail.addView(
-                badge,
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply {
-                    setMargins(dp(8), dp(8), dp(8), dp(8))
-                }
-            )
+            thumbnail.addView(badge, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply { setMargins(dp(5), dp(5), dp(5), dp(5)) })
         }
         val thumbnailWidth = if (compact) dp(imageHeight * 16 / 9) else ViewGroup.LayoutParams.MATCH_PARENT
-        card.addView(thumbnail, LinearLayout.LayoutParams(thumbnailWidth, dp(imageHeight)))
+        card.addView(thumbnail, LinearLayout.LayoutParams(thumbnailWidth, dp(imageHeight)).apply { setMargins(dp(8), dp(8), dp(if (compact) 0 else 8), 0) })
         val title = KidsUi.button(this, item.title, KidsUi.ButtonStyle.GHOST).apply {
             tag = "kids-video-${item.id.id}"
-            textSize = 15f
+            textSize = 16f
+            typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             setTextColor(Color.WHITE)
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
-            minimumHeight = dp(60)
+            minimumHeight = dp(56)
             setOnClickListener { action() }
         }
-        val titleLayout = if (compact) {
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        } else {
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
+        val titleLayout = if (compact) LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f) else LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         card.addView(title, titleLayout)
         return card
     }

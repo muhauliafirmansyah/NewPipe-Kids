@@ -138,4 +138,9 @@
     <string name="kids_avatar_rocket">Rocket</string>
     <string name="kids_avatar_option">Choose %1$s picture</string>
     <string name="kids_back">Back</string>
+    <plurals name="kids_playlist_video_count">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+    <string name="kids_playlist_with_uploader">%1$s · Playlist</string>
 </resources>

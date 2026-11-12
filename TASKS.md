@@ -231,3 +231,12 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
 - [x] Add a visual profile picker with selectable pictures and nickname editing
   for the active profile; preserve parent-locked switching and session limits.
 - [ ] Review the updated child screens on a physical Android device.
+
+## 9. Reference-based content cards
+
+- [x] Display approved channel and video cards together on Home, using round
+  channel images and wide video thumbnails.
+- [x] Give approved playlists a stacked wide-thumbnail card and a count based
+  only on videos visible to the active child.
+- [x] Show known video durations and playlist creator names when available.
+- [ ] Review the updated content cards on a physical Android device.

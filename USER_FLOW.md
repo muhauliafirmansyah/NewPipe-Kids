@@ -46,7 +46,8 @@ flowchart TD
 ```
 
 - The child can turn autoplay on or off from the player or Profile tab.
-- Home presents approved videos and collections with category filters. Search
+- Home presents approved channels, videos, and playlists together, with category filters.
+  Playlist cards count only videos visible to the active child. Search
   matches only approved videos, channels, and playlists. Your stuff contains the
   active profile's favorites. Profile opens a picture-based picker, where the
   active child can edit their nickname and choose a built-in picture, switch

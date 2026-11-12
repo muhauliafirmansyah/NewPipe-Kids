@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,8 +35,8 @@ class KidsUiNavigationTest {
             val parent = ParentSettings(storage)
             parent.setup("1234", "a", "Maya", 30)
             parent.addProfile("1234", "b", "Leo", 30)
-            val first = video("e_04ZrNroTo", "A playful song for kids")
-            val second = video("jNQXAC9IVRw", "Meet the animals")
+            val first = video("e_04ZrNroTo", "A playful song for kids", 599)
+            val second = video("jNQXAC9IVRw", "Meet the animals", 65)
             val hidden = video("dQw4w9WgXcQ", "Hidden video")
             val other = video("9bZkp7q19f0", "Another profile video")
             listOf(first, second, hidden).forEach { parent.approveSearchItem("1234", setOf("a"), it) }
@@ -47,13 +48,13 @@ class KidsUiNavigationTest {
                 val withChannel = ApprovalManager.approveSource(state, setOf("a"), SourceKind.CHANNEL, channel)
                 val approved = ApprovalManager.approveSource(withChannel, setOf("a"), SourceKind.PLAYLIST, playlist)
                 val started = ApprovalManager.beginSourceRefresh(approved, setOf("a"), SourceKind.PLAYLIST, playlist)
-                val refreshed = ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(first.id, second.id))
+                val refreshed = ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(hidden.id, first.id, second.id))
                 refreshed.copy(
                     selectedProfileId = "a",
                     profiles = refreshed.profiles.map { if (it.id == "a") it.copy(favorites = setOf(first.id), avatarId = "fox") else it.copy(avatarId = "panda") },
                     catalog = refreshed.catalog + listOf(
-                        ParentSearchItem(ParentContentKind.CHANNEL, channel, "Little adventures", "https://example.org/channel", first.thumbnailUrl),
-                        ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Sing together", "https://example.org/playlist", second.thumbnailUrl)
+                        ParentSearchItem(ParentContentKind.CHANNEL, channel, "Cocomelon", "https://example.org/channel", first.thumbnailUrl),
+                        ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Sing together", "https://example.org/playlist", second.thumbnailUrl, uploaderName = "Cocomelon")
                     )
                 )
             }
@@ -66,8 +67,13 @@ class KidsUiNavigationTest {
                     assertNotNull(activity.findViewById<View>(R.id.kids_nav_profile))
                     assertFalse(findButton(activity.window.decorView, hidden.title) != null)
                     assertFalse(findButton(activity.window.decorView, other.title) != null)
+                    assertTrue(activity.window.decorView.findViewWithTag<TextView>("kids-playlist-count-${playlist.id}").text == "2 videos")
+                    assertTrue(activity.window.decorView.findViewWithTag<TextView>("kids-duration-${first.id.id}").text == "9:59")
                 }
                 capture("home")
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_category_videos))).performClick() }
+                capture("videos")
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_approved_for_you))).performClick() }
                 scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_search).performClick() }
                 scenario.onActivity { activity ->
                     activity.findViewById<EditText>(R.id.kids_child_search).setText("animals")
@@ -122,6 +128,15 @@ class KidsUiNavigationTest {
                     requireNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_category_playlists))).performClick()
                     assertNotNull(findButton(activity.window.decorView, "Sing together"))
                     assertFalse(findButton(activity.window.decorView, first.title) != null)
+                    assertTrue(activity.window.decorView.findViewWithTag<TextView>("kids-playlist-count-${playlist.id}").text == "2 videos")
+                }
+                capture("playlist")
+                scenario.onActivity { it.window.decorView.findViewWithTag<View>("kids-playlist-thumbnail-${playlist.id}").performClick() }
+                waitFor(scenario) { findButton(it.window.decorView, first.title) != null }
+                scenario.onActivity { activity ->
+                    assertNotNull(findButton(activity.window.decorView, second.title))
+                    assertFalse(findButton(activity.window.decorView, hidden.title) != null)
+                    activity.onBackPressedDispatcher.onBackPressed()
                 }
                 scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_approved_for_you))).performClick() }
                 if (InstrumentationRegistry.getArguments().getString("capture") == "true") {
@@ -169,12 +184,13 @@ class KidsUiNavigationTest {
         }
     }
 
-    private fun video(id: String, title: String) = ParentSearchItem(
+    private fun video(id: String, title: String, durationSeconds: Long? = null) = ParentSearchItem(
         ParentContentKind.VIDEO,
         VideoIdentity.youtube(id),
         title,
         "https://youtu.be/$id",
-        "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+        "https://i.ytimg.com/vi/$id/hqdefault.jpg",
+        durationSeconds = durationSeconds
     )
 
     private fun fullyVisible(view: View?): Boolean {
