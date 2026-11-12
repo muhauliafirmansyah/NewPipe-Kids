@@ -191,6 +191,10 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
     app-open source refresh in Parent and child modes on the same phone.
   - [x] Verify the child session survives an app-process restart without
     counting time in the background on the same phone.
+  - [ ] Verify the full 15-minute refresh interval while the phone remains in
+    the foreground; previous attempts were interrupted.
+  - [ ] Repeat live parent search, approval dialogs, and preview on the phone
+    while the app has focus; the previous run lost focus to a system window.
 - [x] Verify approval and offline-refresh behavior across browsing and playback
   paths on a physical Android device.
   - [x] Verify live YouTube search, channel and playlist approvals and hides,
