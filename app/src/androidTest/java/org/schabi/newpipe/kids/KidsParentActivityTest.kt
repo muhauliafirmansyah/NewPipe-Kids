@@ -3,12 +3,10 @@
  */
 package org.schabi.newpipe.kids
 
-import android.graphics.Rect
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.EditText
@@ -67,6 +65,7 @@ class KidsParentActivityTest {
             parent.approveSearchItem("1234", setOf("test"), ParentSearchItem(ParentContentKind.VIDEO, video, "Test song", "https://youtu.be/e_04ZrNroTo"))
             ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
                 scenario.onActivity {
+                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     it.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
                     it.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
                 }
@@ -78,7 +77,9 @@ class KidsParentActivityTest {
                 while (!playing && System.currentTimeMillis() < deadline) {
                     scenario.onActivity { activity ->
                         val field = KidsParentActivity::class.java.getDeclaredField("previewPlayer").apply { isAccessible = true }
-                        playing = (field.get(activity) as? ExoPlayer)?.currentPosition?.let { it >= 2_000 } == true
+                        val preview = field.get(activity) as? ExoPlayer
+                        preview?.volume = 0f
+                        playing = preview?.currentPosition?.let { it >= 2_000 } == true
                     }
                     if (!playing) Thread.sleep(100)
                 }
@@ -315,34 +316,16 @@ class KidsParentActivityTest {
     }
 
     private fun clickDialogItem(text: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val deadline = System.currentTimeMillis() + 10_000
         var clicked = false
         while (!clicked && System.currentTimeMillis() < deadline) {
-            val root = automation.rootInActiveWindow
-            val node = root?.findAccessibilityNodeInfosByText(text)?.firstOrNull { it.text?.toString()?.equals(text, ignoreCase = true) == true }
-            if (node != null) {
-                val bounds = Rect()
-                node.getBoundsInScreen(bounds)
-                val now = SystemClock.uptimeMillis()
-                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                clicked = automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)
-                down.recycle()
-                up.recycle()
-            }
+            clicked = TestAppWindow.clickText(text)
             if (!clicked) Thread.sleep(50)
         }
-        fun tree(node: AccessibilityNodeInfo?, indent: String = ""): String {
-            if (node == null) return "$indent<empty>\n"
-            return "$indent${node.className} text=${node.text} clickable=${node.isClickable}\n" +
-                (0 until node.childCount).joinToString("") { tree(node.getChild(it), "$indent  ") }
-        }
-        assertTrue("Could not click dialog item $text: ${tree(automation.rootInActiveWindow)}", clicked)
+        assertTrue("Could not click dialog item $text in the test app", clicked)
     }
 
     private fun setDialogFields(vararg values: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun inputs(node: AccessibilityNodeInfo?): List<AccessibilityNodeInfo> {
             if (node == null) return emptyList()
             val current = if (node.className == EditText::class.java.name) listOf(node) else emptyList()
@@ -351,7 +334,7 @@ class KidsParentActivityTest {
         val deadline = System.currentTimeMillis() + 10_000
         var done = false
         while (!done && System.currentTimeMillis() < deadline) {
-            val fields = inputs(automation.rootInActiveWindow)
+            val fields = inputs(TestAppWindow.activeRoot())
             if (fields.size == values.size) {
                 done = fields.zip(values).all { (field, value) ->
                     val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }

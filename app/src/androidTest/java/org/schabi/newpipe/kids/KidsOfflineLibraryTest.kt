@@ -20,6 +20,43 @@ import org.schabi.newpipe.extractor.ServiceList
 
 @RunWith(AndroidJUnit4::class)
 class KidsOfflineLibraryTest {
+    @Test fun failedRefreshPreservesCachedBrowsingAndPlaybackPolicy() {
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "child", "Test child", 2)
+            val service = ServiceList.PeerTube.serviceId
+            val source = SourceIdentity.fromUrl(service, SourceKind.CHANNEL, "https://offline.invalid/video-channels/example")
+            val video = VideoIdentity.fromUrl(service, "https://offline.invalid/w/12345678-1234-1234-1234-123456789abc")
+            parent.approveSearchItem("1234", setOf("child"), ParentSearchItem(ParentContentKind.CHANNEL, source, "Cached channel", source.id))
+            storage.update { state ->
+                val started = ApprovalManager.beginSourceRefresh(state, setOf("child"), SourceKind.CHANNEL, source)
+                val cached = ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(video))
+                cached.copy(
+                    selectedProfileId = "child",
+                    catalog = cached.catalog + ParentSearchItem(ParentContentKind.VIDEO, video, "Cached video", video.id)
+                )
+            }
+            val failed = ApprovedSourceRefresher(storage, ExtractorSourceFetcher()).refreshAll()
+            assertEquals(listOf(video), failed.profiles.single().sources.single().videos)
+            assertTrue(ChildLibrary.videos(failed, "child").any { it.id == video })
+            assertTrue(ChildPlaybackAccess.allowed(failed, "child", video))
+            parent.setVideoHidden("1234", setOf("child"), video, true)
+            val hidden = storage.read()
+            assertTrue(ChildLibrary.videos(hidden, "child").none { it.id == video })
+            assertFalse(ChildPlaybackAccess.allowed(hidden, "child", video))
+            parent.setVideoHidden("1234", setOf("child"), video, false)
+            parent.removeSource("1234", setOf("child"), SourceKind.CHANNEL, source)
+            val removed = storage.read()
+            assertTrue(ChildLibrary.videos(removed, "child").none { it.id == video })
+            assertFalse(ChildPlaybackAccess.allowed(removed, "child", video))
+        } finally {
+            storage.update { original }
+        }
+    }
+
     @Test fun failedRefreshKeepsCachedVideosButNotHiddenOrRemovedOnes() {
         val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
         val original = storage.read()

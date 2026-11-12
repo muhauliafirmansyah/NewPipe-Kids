@@ -3,10 +3,7 @@
  */
 package org.schabi.newpipe.kids
 
-import android.graphics.Rect
-import android.os.SystemClock
-import android.view.MotionEvent
-import android.view.accessibility.AccessibilityNodeInfo
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
@@ -32,6 +29,7 @@ class KidsParentSearchLiveTest {
             ParentSettings(storage).setup("1234", "test", "Test child", 10)
             ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
                 scenario.onActivity {
+                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     it.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
                     it.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
                 }
@@ -81,6 +79,7 @@ class KidsParentSearchLiveTest {
             ParentSettings(storage).setup("1234", "test", "Test child", 10)
             ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
                 scenario.onActivity {
+                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     it.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
                     it.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
                 }
@@ -122,27 +121,7 @@ class KidsParentSearchLiveTest {
     }
 
     private fun clickAccessible(text: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-        waitFor {
-            val node = automation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
-                ?.firstOrNull { it.text?.toString()?.equals(text, ignoreCase = true) == true }
-            if (node == null) {
-                false
-            } else {
-                var target: AccessibilityNodeInfo? = node
-                while (target != null && !target.isClickable) target = target.parent
-                if (target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) return@waitFor true
-                val bounds = Rect()
-                node.getBoundsInScreen(bounds)
-                val now = SystemClock.uptimeMillis()
-                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                val tapped = automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)
-                down.recycle()
-                up.recycle()
-                tapped
-            }
-        }
+        waitFor { TestAppWindow.clickText(text) }
     }
 
     private fun waitFor(condition: () -> Boolean) {

@@ -32,6 +32,7 @@ class YoutubePlaybackLiveTest {
             instrumentation.runOnMainSync {
                 val activePlayer = ExoPlayer.Builder(instrumentation.targetContext).build()
                 player = activePlayer
+                activePlayer.volume = 0f
                 activePlayer.addListener(object : Player.Listener {
                     override fun onPlayerError(exception: PlaybackException) {
                         error.set(exception)

@@ -40,6 +40,7 @@ class NormalYoutubePlaybackLiveTest {
         try {
             instrumentation.runOnMainSync {
                 player = ExoPlayer.Builder(instrumentation.targetContext).build().also { active ->
+                    active.volume = 0f
                     active.addListener(object : Player.Listener {
                         override fun onPlayerError(exception: PlaybackException) {
                             error.set(exception)

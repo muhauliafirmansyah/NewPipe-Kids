@@ -5,11 +5,13 @@ package org.schabi.newpipe.kids
 
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
 import org.junit.Assert.assertTrue
@@ -93,8 +95,11 @@ class KidsPlaylistPlaybackLiveTest {
         }
     }
 
-    private fun waitForPlaying(scenario: ActivityScenario<KidsChildActivity>, title: String) = waitFor(scenario, 40_000) {
-        hasText(it.window.decorView, title) && (it.findViewById<PlayerView>(R.id.kids_player_view)?.player?.currentPosition ?: 0) >= 1_000
+    private fun waitForPlaying(scenario: ActivityScenario<KidsChildActivity>, title: String) = waitFor(scenario, 40_000) { activity ->
+        val player = activity.findViewById<PlayerView>(R.id.kids_player_view)?.player as? ExoPlayer
+        val counters = player?.videoDecoderCounters
+        counters?.ensureUpdated()
+        hasText(activity.window.decorView, title) && (player?.currentPosition ?: 0) >= 1_000 && (counters?.renderedOutputBufferCount ?: 0) > 0
     }
 
     private fun findButton(view: View, text: String): Button? {
@@ -112,7 +117,11 @@ class KidsPlaylistPlaybackLiveTest {
         val deadline = System.currentTimeMillis() + timeout
         var satisfied = false
         while (!satisfied && System.currentTimeMillis() < deadline) {
-            scenario.onActivity { satisfied = condition(it) }
+            scenario.onActivity { activity ->
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                (activity.findViewById<PlayerView>(R.id.kids_player_view)?.player as? ExoPlayer)?.volume = 0f
+                satisfied = condition(activity)
+            }
             if (!satisfied) Thread.sleep(50)
         }
         var detail = ""

@@ -6,11 +6,13 @@ package org.schabi.newpipe.kids
 import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
 import org.junit.Assert.assertFalse
@@ -177,7 +179,11 @@ class KidsChildPlaybackLiveTest {
         val deadline = System.currentTimeMillis() + timeout
         var satisfied = false
         while (!satisfied && System.currentTimeMillis() < deadline) {
-            scenario.onActivity { satisfied = condition(it) }
+            scenario.onActivity { activity ->
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                (activity.findViewById<PlayerView>(R.id.kids_player_view)?.player as? ExoPlayer)?.volume = 0f
+                satisfied = condition(activity)
+            }
             if (!satisfied) Thread.sleep(50)
         }
         assertTrue("Timed out waiting for child playback", satisfied)

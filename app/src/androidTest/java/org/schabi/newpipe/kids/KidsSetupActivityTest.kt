@@ -53,14 +53,17 @@ class KidsSetupActivityTest {
         assumeTrue(original.parentPin == null && original.profiles.isEmpty())
         try {
             ActivityScenario.launch(KidsSetupActivity::class.java).use { scenario ->
-                scenario.onActivity { activity ->
-                    activity.findViewById<EditText>(R.id.kids_profile_name).setText("Test child")
-                    activity.findViewById<EditText>(R.id.kids_session_minutes).setText("15")
-                    activity.findViewById<EditText>(R.id.kids_parent_pin).setText("1234")
-                    activity.findViewById<EditText>(R.id.kids_parent_pin_confirm).setText("1234")
-                    activity.findViewById<Button>(R.id.kids_setup_create).performClick()
+                // Hold the storage lock until recreation so a fast device cannot finish setup first.
+                synchronized(storage) {
+                    scenario.onActivity { activity ->
+                        activity.findViewById<EditText>(R.id.kids_profile_name).setText("Test child")
+                        activity.findViewById<EditText>(R.id.kids_session_minutes).setText("15")
+                        activity.findViewById<EditText>(R.id.kids_parent_pin).setText("1234")
+                        activity.findViewById<EditText>(R.id.kids_parent_pin_confirm).setText("1234")
+                        activity.findViewById<Button>(R.id.kids_setup_create).performClick()
+                    }
+                    scenario.recreate()
                 }
-                scenario.recreate()
                 val deadline = System.currentTimeMillis() + 10_000
                 while (storage.read().parentPin == null && System.currentTimeMillis() < deadline) {
                     Thread.sleep(50)

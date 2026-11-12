@@ -5,11 +5,12 @@ are in [USER_FLOW.md](USER_FLOW.md). Check a task only when its behavior is
 implemented and verified.
 
 **Current state:** The experimental launcher, parent screens, child library,
-session timer, and player are connected. Unit and Android 15 emulator tests
-cover selected flows, including playback and stopping after a hide. Physical
-device testing and a full bypass review are still outstanding; the app is not
-yet ready for use as a child-restricted experience. The Kids flow supports
-YouTube, PeerTube, and media.ccc.de, using direct or merged video streams.
+session timer, and player are connected. Unit tests, Android 15 emulator tests,
+and Android 16 phone tests cover selected flows, including playback and stopping
+after a hide. The phone's 15-minute refresh verification and a full bypass review
+are still outstanding; the app is not yet ready for use as a child-restricted
+experience. The Kids flow supports YouTube, PeerTube, and media.ccc.de, using
+direct or merged video streams.
 Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
 
 ## 1. Foundations
@@ -106,6 +107,7 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   - [x] Verify a public YouTube playlist and channel refresh on an emulator.
   - [x] Schedule refreshes on app open and every 15 minutes while Parent or
     child mode remains active; verify the app-open refresh on an emulator.
+  - [x] Verify the full 15-minute refresh interval in Parent mode on an emulator.
   - [x] Verify PeerTube and media.ccc.de channel refresh and PeerTube playlist
     refresh on an emulator.
 - [x] Preserve the last successful library on refresh failure and continue
@@ -128,6 +130,8 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
     an unapproved link and revocation during playback.
   - [x] Audit exported components and test that only the guarded launcher and
     permission-protected system components are externally reachable.
+  - [x] Confirm an external shell cannot start Parent mode, setup, the upstream
+    router, or the upstream player service on an emulator.
 - [x] Stop playback if the current video loses its final approval or is hidden.
 - [x] Track watch history and favorites separately for each profile; mark a
   video watched after 90% has played.
@@ -173,12 +177,32 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   shared links, and background playback using unit and emulator tests.
 - [x] Test session expiry, backgrounding, an app-process restart, and parent
   reset on an emulator.
-- [ ] Test playlist ordering, autoplay choices, unavailable videos, and
+- [x] Test playlist ordering, autoplay choices, unavailable videos, and
   representative made-for-kids videos on a physical Android device.
+  - [x] Verify rendered video frames, unavailable-video rejection, and more
+    than 70 seconds of muted test-player playback for the reported kids video
+    and an ordinary video on a Galaxy S24 Ultra with Android 16.
 - [ ] Verify first-run setup, persistent storage, periodic refresh, and the
   complete child flow on a physical Android device.
-- [ ] Verify approval and offline-refresh behavior across browsing and playback
+  - [x] Verify test-only preferences and SQLite persistence across an app-process
+    restart, plus a 3,000-video cached library, on a Galaxy S24 Ultra with
+    Android 16.
+  - [x] Verify first-run setup, profile management, child navigation, and
+    app-open source refresh in Parent and child modes on the same phone.
+  - [x] Verify the child session survives an app-process restart without
+    counting time in the background on the same phone.
+- [x] Verify approval and offline-refresh behavior across browsing and playback
   paths on a physical Android device.
+  - [x] Verify live YouTube search, channel and playlist approvals and hides,
+    and PeerTube playlist refresh at the library level on the same phone.
+  - [x] Verify a failed refresh preserves the cached library while local hides
+    and removal still block browsing and playback access at the policy level.
+  - [x] Verify cached browsing, shared links, approval overlap, removal, hides,
+    session expiry, and background playback with activity tests on the phone.
+- [x] Limit device-test dialog actions to the development app and verify that
+  test helpers ignore other apps' windows.
+- [ ] Complete a broader bypass and safety review before recommending the app
+  as a child-restricted experience.
 - [x] Review NewPipe's GPL obligations and trademark policy; record findings
   in [RELEASE_REVIEW.md](RELEASE_REVIEW.md).
 - [ ] Before an end-user release, choose a distinct app name and identity and

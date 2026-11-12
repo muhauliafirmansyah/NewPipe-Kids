@@ -3,12 +3,9 @@
  */
 package org.schabi.newpipe.kids
 
-import android.graphics.Rect
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.accessibility.AccessibilityNodeInfo
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
@@ -36,6 +33,7 @@ class KidsParentSourceSearchLiveTest {
             ParentSettings(storage).setup("1234", "test", "Test child", 10)
             ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
                 scenario.onActivity {
+                    it.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     it.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
                     it.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
                 }
@@ -91,30 +89,13 @@ class KidsParentSourceSearchLiveTest {
     }
 
     private fun clickDialogText(text: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val deadline = System.currentTimeMillis() + 20_000
         var clicked = false
         while (!clicked && System.currentTimeMillis() < deadline) {
-            val node = automation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)
-                ?.firstOrNull { it.text?.toString()?.equals(text, ignoreCase = true) == true }
-            if (node != null) {
-                var target: AccessibilityNodeInfo? = node
-                while (target != null && !target.isClickable) target = target.parent
-                clicked = target?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
-                if (!clicked) {
-                    val bounds = Rect()
-                    node.getBoundsInScreen(bounds)
-                    val now = SystemClock.uptimeMillis()
-                    val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                    val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                    clicked = automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)
-                    down.recycle()
-                    up.recycle()
-                }
-            }
+            clicked = TestAppWindow.clickText(text)
             if (!clicked) Thread.sleep(50)
         }
-        assertTrue("Could not select $text", clicked)
+        assertTrue("Could not select $text in the test app", clicked)
     }
 
     private fun waitFor(scenario: ActivityScenario<KidsParentActivity>, timeout: Long = 10_000, condition: (KidsParentActivity) -> Boolean) {

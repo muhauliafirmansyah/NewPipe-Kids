@@ -6,11 +6,8 @@ package org.schabi.newpipe.kids
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
-import android.os.SystemClock
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
@@ -325,28 +322,16 @@ class KidsChildActivityTest {
     }
 
     private fun tapDialogText(text: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val deadline = System.currentTimeMillis() + 10_000
         var tapped = false
         while (!tapped && System.currentTimeMillis() < deadline) {
-            val node = automation.rootInActiveWindow?.findAccessibilityNodeInfosByText(text)?.firstOrNull { it.text?.toString()?.equals(text, ignoreCase = true) == true }
-            if (node != null) {
-                val bounds = Rect()
-                node.getBoundsInScreen(bounds)
-                val now = SystemClock.uptimeMillis()
-                val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, bounds.exactCenterX(), bounds.exactCenterY(), 0)
-                tapped = automation.injectInputEvent(down, true) && automation.injectInputEvent(up, true)
-                down.recycle()
-                up.recycle()
-            }
+            tapped = TestAppWindow.clickText(text)
             if (!tapped) Thread.sleep(50)
         }
-        assertTrue("Could not tap $text", tapped)
+        assertTrue("Could not tap $text in the test app", tapped)
     }
 
     private fun enterDialogPin(pin: String) {
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         fun findInput(node: AccessibilityNodeInfo?): AccessibilityNodeInfo? {
             if (node == null) return null
             if (node.className == EditText::class.java.name) return node
@@ -356,7 +341,7 @@ class KidsChildActivityTest {
         val deadline = System.currentTimeMillis() + 10_000
         var entered = false
         while (!entered && System.currentTimeMillis() < deadline) {
-            val input = findInput(automation.rootInActiveWindow)
+            val input = findInput(TestAppWindow.activeRoot())
             val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, pin) }
             entered = input?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args) == true
             if (!entered) Thread.sleep(50)
