@@ -23,7 +23,10 @@ object ProfileManager {
 
     fun remove(state: KidsState, id: String): KidsState {
         require(state.profiles.any { it.id == id }) { "Profile not found" }
-        return state.copy(profiles = state.profiles.filterNot { it.id == id })
+        return state.copy(
+            profiles = state.profiles.filterNot { it.id == id },
+            selectedProfileId = state.selectedProfileId.takeUnless { it == id }
+        )
     }
 
     fun visibleProfiles(state: KidsState): List<ChildProfile> = state.profiles.filter { it.enabled }
@@ -32,17 +35,29 @@ object ProfileManager {
     fun setSessionLimit(state: KidsState, id: String, minutes: Int): KidsState {
         val limit = SessionTime.newSession(minutes).remainingMillis
         return change(state, id) { profile ->
-            profile.copy(sessionLimitMinutes = minutes, remainingMillis = minOf(profile.remainingMillis, limit))
+            profile.copy(
+                sessionLimitMinutes = minutes,
+                remainingMillis = minOf(profile.remainingMillis, limit),
+                sessionRevision = nextSessionRevision(profile)
+            )
         }
     }
 
     /** A parent action; starts a full session using the profile's current limit. */
     fun resetSession(state: KidsState, id: String): KidsState = change(state, id) { profile ->
-        profile.copy(remainingMillis = SessionTime.newSession(profile.sessionLimitMinutes).remainingMillis)
+        profile.copy(
+            remainingMillis = SessionTime.newSession(profile.sessionLimitMinutes).remainingMillis,
+            sessionRevision = nextSessionRevision(profile)
+        )
     }
 
     private fun change(state: KidsState, id: String, transform: (ChildProfile) -> ChildProfile): KidsState {
         require(state.profiles.any { it.id == id }) { "Profile not found" }
         return state.copy(profiles = state.profiles.map { if (it.id == id) transform(it) else it })
+    }
+
+    private fun nextSessionRevision(profile: ChildProfile): Long {
+        check(profile.sessionRevision < Long.MAX_VALUE) { "Session revision exhausted" }
+        return profile.sessionRevision + 1
     }
 }

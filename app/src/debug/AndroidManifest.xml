@@ -4,5 +4,16 @@
 
     <application
         android:name=".DebugApp"
-        tools:replace="android:name" />
+        tools:replace="android:name">
+        <!-- Debug diagnostics must not expose app memory to other applications. -->
+        <activity
+            android:name="leakcanary.internal.activity.LeakActivity"
+            android:exported="false"
+            tools:replace="android:exported" />
+        <activity-alias
+            android:name="leakcanary.internal.activity.LeakLauncherActivity"
+            android:enabled="false"
+            android:exported="false"
+            tools:replace="android:enabled,android:exported" />
+    </application>
 </manifest>

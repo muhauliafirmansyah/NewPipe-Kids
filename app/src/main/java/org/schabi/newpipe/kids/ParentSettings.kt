@@ -4,7 +4,13 @@
 package org.schabi.newpipe.kids
 
 /** Persistent parent actions. Call on a worker thread: PIN derivation and disk writes may be slow. */
-class ParentSettings(private val storage: KidsStorage) {
+class ParentSettings(
+    private val storage: KidsStorage,
+    private val nowMillis: () -> Long = System::currentTimeMillis
+) {
+    /** Performs a rate-limited PIN check before opening Parent mode. */
+    fun authenticate(pin: String): KidsState = authorized(pin) { it }
+
     /** Creates the PIN and first profile together; neither is saved if validation fails. */
     fun setup(pin: String, id: String, name: String, limitMinutes: Int): KidsState = storage.update {
         check(it.profiles.isEmpty()) { "Profiles already exist" }
@@ -25,6 +31,32 @@ class ParentSettings(private val storage: KidsStorage) {
 
     fun setProfileSwitchLock(pin: String, enabled: Boolean): KidsState = authorized(pin) { it.copy(lockProfileSwitching = enabled) }
 
+    fun selectProfile(pin: String, id: String): KidsState = authorized(pin) { state ->
+        require(state.profiles.any { it.id == id && it.enabled }) { "Profile unavailable" }
+        state.copy(selectedProfileId = id)
+    }
+
+    /** Search metadata is only for display; authorization always comes from profile approvals. */
+    fun approveSearchItem(pin: String, profiles: Set<String>, item: ParentSearchItem): KidsState = authorized(pin) { state ->
+        val approved = when (item.kind) {
+            ParentContentKind.VIDEO -> {
+                require(VideoIdentity.fromUrl(item.id.serviceId, item.url) == item.id) { "Video ID mismatch" }
+                ApprovalManager.approveVideo(state, profiles, item.id)
+            }
+
+            ParentContentKind.CHANNEL -> {
+                require(SourceIdentity.fromUrl(item.id.serviceId, SourceKind.CHANNEL, item.url) == item.id) { "Channel ID mismatch" }
+                ApprovalManager.approveSource(state, profiles, SourceKind.CHANNEL, item.id)
+            }
+
+            ParentContentKind.PLAYLIST -> {
+                require(SourceIdentity.fromUrl(item.id.serviceId, SourceKind.PLAYLIST, item.url) == item.id) { "Playlist ID mismatch" }
+                ApprovalManager.approveSource(state, profiles, SourceKind.PLAYLIST, item.id)
+            }
+        }
+        approved.copy(catalog = approved.catalog.filterNot { it.kind == item.kind && it.id == item.id } + item)
+    }
+
     fun approveVideo(pin: String, profiles: Set<String>, video: StoredContentId): KidsState = authorized(pin) { ApprovalManager.approveVideo(it, profiles, video) }
 
     fun removeVideoApproval(pin: String, profiles: Set<String>, video: StoredContentId): KidsState = authorized(pin) { ApprovalManager.removeVideoApproval(it, profiles, video) }
@@ -43,10 +75,37 @@ class ParentSettings(private val storage: KidsStorage) {
         enabled: Boolean
     ): KidsState = authorized(pin) { ApprovalManager.setSourceEnabled(it, profiles, kind, id, enabled) }
 
-    fun changePin(currentPin: String, newPin: String): KidsState = storage.update { ParentPin.change(it, currentPin, newPin) }
+    fun changePin(currentPin: String, newPin: String): KidsState = authorized(currentPin) { ParentPin.change(it, currentPin, newPin) }
 
-    private fun authorized(pin: String, action: (KidsState) -> KidsState): KidsState = storage.update { state ->
-        require(ParentPin.verify(state, pin)) { "Incorrect parent PIN" }
-        action(state)
+    private fun authorized(pin: String, action: (KidsState) -> KidsState): KidsState {
+        val now = nowMillis()
+        require(now >= 0)
+        var failure: String? = null
+        val updated = storage.update { state ->
+            when {
+                now < state.pinLockedUntilMillis -> {
+                    failure = "Parent PIN temporarily locked"
+                    state
+                }
+
+                !ParentPin.verify(state, pin) -> {
+                    failure = "Incorrect parent PIN"
+                    val attempts = if (state.pinLockedUntilMillis > 0) 1 else state.failedPinAttempts + 1
+                    state.copy(
+                        failedPinAttempts = attempts,
+                        pinLockedUntilMillis = if (attempts >= MAX_ATTEMPTS) now + LOCK_MILLIS else 0
+                    )
+                }
+
+                else -> action(state.copy(failedPinAttempts = 0, pinLockedUntilMillis = 0))
+            }
+        }
+        require(failure == null) { requireNotNull(failure) }
+        return updated
+    }
+
+    companion object {
+        private const val MAX_ATTEMPTS = 5
+        private const val LOCK_MILLIS = 30_000L
     }
 }

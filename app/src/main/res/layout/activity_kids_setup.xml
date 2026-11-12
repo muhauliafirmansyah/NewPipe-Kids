@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/kids_setup_title"
+            android:textAppearance="?attr/textAppearanceHeadline5" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/kids_setup_description" />
+
+        <EditText
+            android:id="@+id/kids_profile_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:autofillHints=""
+            android:hint="@string/kids_profile_name"
+            android:inputType="textPersonName"
+            android:maxLength="60" />
+
+        <EditText
+            android:id="@+id/kids_session_minutes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/kids_session_limit_hint"
+            android:inputType="number"
+            android:maxLength="3" />
+
+        <EditText
+            android:id="@+id/kids_parent_pin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints=""
+            android:hint="@string/kids_parent_pin_hint"
+            android:inputType="numberPassword"
+            android:saveEnabled="false"
+            android:maxLength="12" />
+
+        <EditText
+            android:id="@+id/kids_parent_pin_confirm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints=""
+            android:hint="@string/kids_parent_pin_confirm_hint"
+            android:inputType="numberPassword"
+            android:saveEnabled="false"
+            android:maxLength="12" />
+
+        <TextView
+            android:id="@+id/kids_setup_error"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:accessibilityLiveRegion="polite"
+            android:layout_marginTop="12dp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/kids_setup_create"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="@string/kids_setup_create" />
+    </LinearLayout>
+</ScrollView>

@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KidsRulesTest {
-    private val video = ContentId(0, "video")
+    private val video = ContentId(0, "e_04ZrNroTo")
     private val channel = ContentSource(SourceKind.CHANNEL, ContentId(0, "channel"))
     private val playlist = ContentSource(SourceKind.PLAYLIST, ContentId(0, "playlist"))
 

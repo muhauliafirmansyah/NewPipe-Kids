@@ -10,7 +10,7 @@ import org.junit.Test
 
 class KidsStorageTest {
     @Test fun `state round trip keeps profile isolation and source snapshots`() {
-        val video = StoredContentId(0, "video")
+        val video = StoredContentId(0, "e_04ZrNroTo")
         val source = StoredSource(SourceKind.PLAYLIST, StoredContentId(0, "list"), videos = listOf(video))
         val profile = ChildProfile(
             "one",

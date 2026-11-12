@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="kids_parent_unlock_button" type="id" />
+    <item name="kids_parent_unlock_pin" type="id" />
+    <item name="kids_parent_error" type="id" />
+    <item name="kids_parent_search_input" type="id" />
+    <item name="kids_parent_search_button" type="id" />
+    <item name="kids_time_remaining" type="id" />
+    <item name="kids_session_ended" type="id" />
+    <item name="kids_child_search" type="id" />
+    <item name="kids_player_view" type="id" />
+</resources>

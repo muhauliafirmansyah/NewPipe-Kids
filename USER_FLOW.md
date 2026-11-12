@@ -29,9 +29,11 @@ flowchart TD
     A[Choose profile] --> B[Child home]
     B --> C[Browse approved library]
     B --> D[Search approved library]
-    C --> E[Choose video or playlist]
+    C --> E[Choose video, channel, or playlist]
     D --> E
-    E --> F[Play video]
+    E -->|Video| F[Play video]
+    E -->|Channel or playlist| L[Browse its approved videos]
+    L --> F
     F --> G{Video ends}
     G -->|Autoplay off| H[Stop and show available controls]
     G -->|Autoplay on| I{Playing a playlist?}
@@ -44,6 +46,8 @@ flowchart TD
 ```
 
 - The child can turn autoplay on or off.
+- Search can match approved videos, channels, and playlists. A child can also
+  view favorites; hidden or disabled content stays out of those views.
 - Outside a playlist, autoplay prefers unwatched approved videos. Once all
   approved videos have been watched, it chooses the one whose most recent
   viewing was longest ago. A video counts as watched after 90% has played.
@@ -85,7 +89,8 @@ Time counts while the child actively uses the app, including browsing and
 playback, and pauses when the app is backgrounded. Only a parent can start
 another session after the limit is reached. Parents can set the session limit
 from 1 minute to 2 hours. There is no daily limit for now; parents decide
-whether to start another session. Countdown timing is still to be decided.
+whether to start another session. The warning appears for the last 10% of a
+session, with a minimum of 10 seconds and a maximum of one minute.
 
 ## Parent: manage content and settings
 
@@ -113,6 +118,10 @@ flowchart TD
     P --> C
     C --> K[Return to child experience]
 ```
+
+In Add content, parents choose YouTube, PeerTube, or media.ccc.de. For
+PeerTube, they can choose the server to search. The parent reviews an item and
+selects the profiles that should receive it.
 
 Removing an approval removes access only when no other approval covers the
 video. If the app detects that a currently playing video is no longer covered,

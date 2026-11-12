@@ -35,14 +35,17 @@ class ParentSettingsTest {
         val store = storage()
         val parent = ParentSettings(store)
         parent.setup("1234", "a", "Alex", 10)
-        val video = StoredContentId(0, "video")
+        val video = StoredContentId(0, "e_04ZrNroTo")
         parent.approveVideo("1234", setOf("a"), video)
         val before = store.read()
         try {
             parent.setVideoHidden("9999", setOf("a"), video, true)
             throw AssertionError("Incorrect PIN should fail")
         } catch (_: IllegalArgumentException) {
-            assertEquals(before, store.read())
+            val after = store.read()
+            assertEquals(before.profiles, after.profiles)
+            assertEquals(before.parentPin, after.parentPin)
+            assertEquals(1, after.failedPinAttempts)
         }
         assertTrue(store.read().profiles.single().approvedLibrary().canPlay(video.toContentId()))
         parent.setVideoHidden("1234", setOf("a"), video, true)
@@ -59,6 +62,59 @@ class ParentSettingsTest {
             throw AssertionError("Invalid profile should fail")
         } catch (_: IllegalArgumentException) {
             assertEquals(KidsState(), store.read())
+        }
+    }
+
+    @Test fun `repeated wrong PINs lock parent actions until timeout`() {
+        val store = storage()
+        var now = 100_000L
+        val parent = ParentSettings(store) { now }
+        parent.setup("1234", "a", "Alex", 10)
+        repeat(5) {
+            try {
+                parent.renameProfile("9999", "a", "Wrong")
+                throw AssertionError("Wrong PIN should fail")
+            } catch (_: IllegalArgumentException) {
+                assertEquals("Alex", store.read().profiles.single().name)
+            }
+        }
+        assertEquals(130_000L, store.read().pinLockedUntilMillis)
+        try {
+            parent.renameProfile("1234", "a", "Pat")
+            throw AssertionError("Correct PIN should remain locked until timeout")
+        } catch (_: IllegalArgumentException) {
+            assertEquals("Alex", store.read().profiles.single().name)
+        }
+        now = 130_000L
+        parent.renameProfile("1234", "a", "Pat")
+        assertEquals("Pat", store.read().profiles.single().name)
+        assertEquals(0, store.read().failedPinAttempts)
+        assertEquals(0L, store.read().pinLockedUntilMillis)
+    }
+
+    @Test fun `parent search approval saves display metadata without broadening profiles`() {
+        val store = storage()
+        val parent = ParentSettings(store)
+        parent.setup("1234", "a", "Alex", 10)
+        parent.addProfile("1234", "b", "Sam", 10)
+        val video = VideoIdentity.youtube("e_04ZrNroTo")
+        val item = ParentSearchItem(
+            ParentContentKind.VIDEO,
+            video,
+            "A song",
+            "https://youtu.be/e_04ZrNroTo"
+        )
+        val saved = parent.approveSearchItem("1234", setOf("a"), item)
+        assertEquals(item, saved.catalog.single())
+        assertTrue(saved.profiles.first().approvedLibrary().canPlay(video.toContentId()))
+        assertFalse(saved.profiles.last().approvedLibrary().canPlay(video.toContentId()))
+        assertEquals(saved, KidsStateCodec.decode(KidsStateCodec.encode(saved)))
+        val forged = item.copy(id = VideoIdentity.youtube("dQw4w9WgXcQ"))
+        try {
+            parent.approveSearchItem("1234", setOf("a"), forged)
+            throw AssertionError("Mismatched video ID should fail")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(saved, store.read())
         }
     }
 }

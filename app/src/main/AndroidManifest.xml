@@ -40,21 +40,74 @@
         android:memtagMode="async"
         tools:ignore="AllowBackup">
         <activity
-            android:name=".MainActivity"
+            android:name=".kids.KidsChildActivity"
             android:exported="true"
-            android:label="@string/app_name"
-            android:launchMode="singleTask">
+            android:launchMode="singleTop"
+            android:theme="@style/LightTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="youtube.com" />
+                <data android:host="www.youtube.com" />
+                <data android:host="m.youtube.com" />
+                <data android:pathPrefix="/watch" />
+                <data android:pathPrefix="/shorts/" />
+                <data android:pathPrefix="/live/" />
+                <data android:pathPrefix="/embed/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="youtu.be" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="media.ccc.de" />
+                <data android:pathPrefix="/v/" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
+
+        <activity
+            android:name=".kids.KidsParentActivity"
+            android:exported="false"
+            android:theme="@style/LightTheme" />
+
+        <activity
+            android:name=".kids.KidsSetupActivity"
+            android:exported="false"
+            android:theme="@style/LightTheme" />
+
+        <activity
+            android:name=".MainActivity"
+            android:enabled="false"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:launchMode="singleTask" />
 
         <receiver
             android:name="androidx.media.session.MediaButtonReceiver"
-            android:exported="true">
+            android:enabled="false"
+            android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
@@ -71,7 +124,8 @@
 
         <service
             android:name=".player.PlayerService"
-            android:exported="true"
+            android:enabled="false"
+            android:exported="false"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
@@ -108,7 +162,8 @@
 
         <activity
             android:name=".PanicResponderActivity"
-            android:exported="true"
+            android:enabled="false"
+            android:exported="false"
             android:launchMode="singleInstance"
             android:noHistory="true"
             android:theme="@android:style/Theme.NoDisplay">
@@ -141,7 +196,7 @@
 
         <activity
             android:name=".util.FilePickerActivityHelper"
-            android:exported="true"
+            android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/FilePickerThemeDark">
             <intent-filter>
@@ -168,7 +223,8 @@
         <activity
             android:name=".RouterActivity"
             android:excludeFromRecents="true"
-            android:exported="true"
+            android:enabled="false"
+            android:exported="false"
             android:label="@string/preferred_open_action_share_menu_title"
             android:taskAffinity=""
             android:theme="@style/RouterActivityThemeDark">

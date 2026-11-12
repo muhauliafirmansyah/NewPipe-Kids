@@ -30,9 +30,14 @@ data class ApprovedLibrary(
     val disabledSources: Set<ContentSource> = emptySet()
 ) {
     fun canPlay(video: ContentId): Boolean {
-        if (video in hiddenVideos) return false
-        return video in videos || sources.any { source ->
-            source !in disabledSources && video in sourceVideos[source].orEmpty()
+        val canonical = try {
+            VideoIdentity.canonicalize(StoredContentId(video.serviceId, video.id)).toContentId()
+        } catch (_: Exception) {
+            return false
+        }
+        if (canonical in hiddenVideos) return false
+        return canonical in videos || sources.any { source ->
+            source !in disabledSources && canonical in sourceVideos[source].orEmpty()
         }
     }
 
