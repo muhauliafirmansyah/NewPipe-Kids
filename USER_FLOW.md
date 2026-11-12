@@ -48,7 +48,9 @@ flowchart TD
 - The child can turn autoplay on or off from the player or Profile tab.
 - Home presents approved videos and collections with category filters. Search
   matches only approved videos, channels, and playlists. Your stuff contains the
-  active profile's favorites, and Profile contains switching and settings.
+  active profile's favorites. Profile opens a picture-based picker, where the
+  active child can edit their nickname and choose a built-in picture, switch
+  profiles, and adjust autoplay.
 - The parent-mode lock is available from the child screens. Hidden or disabled
   content stays out of child browsing, search, and favorites.
 - Outside a playlist, autoplay prefers unwatched approved videos. Once all

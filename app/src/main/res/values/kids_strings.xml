@@ -121,4 +121,21 @@
     <string name="kids_parent_kind_playlist">Playlist</string>
     <string name="kids_parent_search_results">Search results</string>
     <string name="kids_no_matches">No matches in your approved library.</string>
+    <string name="kids_who_is_watching">Who’s\nwatching?</string>
+    <string name="kids_approved_for_you">Approved for you</string>
+    <string name="kids_edit_profile">Edit</string>
+    <string name="kids_edit_profile_description">Edit your profile</string>
+    <string name="kids_pick_picture">Pick your picture, %1$s!</string>
+    <string name="kids_edit_name">Edit name</string>
+    <string name="kids_avatar_initial">Your initial</string>
+    <string name="kids_avatar_fox">Fox</string>
+    <string name="kids_avatar_cat">Cat</string>
+    <string name="kids_avatar_panda">Panda</string>
+    <string name="kids_avatar_frog">Frog</string>
+    <string name="kids_avatar_rabbit">Rabbit</string>
+    <string name="kids_avatar_bear">Bear</string>
+    <string name="kids_avatar_unicorn">Unicorn</string>
+    <string name="kids_avatar_rocket">Rocket</string>
+    <string name="kids_avatar_option">Choose %1$s picture</string>
+    <string name="kids_back">Back</string>
 </resources>

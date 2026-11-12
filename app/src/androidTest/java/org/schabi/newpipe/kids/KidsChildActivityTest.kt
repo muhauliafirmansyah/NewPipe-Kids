@@ -56,18 +56,18 @@ class KidsChildActivityTest {
                 )
             }
             ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
-                waitFor(scenario) { findButton(it.window.decorView, "Channel: Space Learning") != null }
+                waitFor(scenario) { findButton(it.window.decorView, "Space Learning") != null }
                 scenario.onActivity { activity ->
-                    assertTrue(findButton(activity.window.decorView, "Playlist: Music Collection") != null)
-                    assertTrue(findButton(activity.window.decorView, "Channel: Hidden Channel") == null)
-                    assertTrue(findButton(activity.window.decorView, "Channel: Other Channel") == null)
+                    assertTrue(findButton(activity.window.decorView, "Music Collection") != null)
+                    assertTrue(findButton(activity.window.decorView, "Hidden Channel") == null)
+                    assertTrue(findButton(activity.window.decorView, "Other Channel") == null)
                     activity.findViewById<Button>(R.id.kids_nav_search).performClick()
                     activity.findViewById<EditText>(R.id.kids_child_search).setText("space")
-                    assertTrue(findButton(activity.window.decorView, "Channel: Space Learning") != null)
-                    assertTrue(findButton(activity.window.decorView, "Playlist: Music Collection") == null)
+                    assertTrue(findButton(activity.window.decorView, "Space Learning") != null)
+                    assertTrue(findButton(activity.window.decorView, "Music Collection") == null)
                     activity.findViewById<EditText>(R.id.kids_child_search).setText("music")
-                    assertTrue(findButton(activity.window.decorView, "Channel: Space Learning") == null)
-                    assertTrue(findButton(activity.window.decorView, "Playlist: Music Collection") != null)
+                    assertTrue(findButton(activity.window.decorView, "Space Learning") == null)
+                    assertTrue(findButton(activity.window.decorView, "Music Collection") != null)
                 }
             }
         } finally {
@@ -89,16 +89,14 @@ class KidsChildActivityTest {
                 scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
                 waitFor(scenario) { hasText(it.window.decorView, "First child") }
                 Thread.sleep(1_200)
-                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_switch_profile))).performClick() }
-                tapDialogText("Second child")
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Second child")).performClick() }
                 waitForStorage { storage.read().selectedProfileId == "b" }
                 val firstRemaining = storage.read().profiles.first { it.id == "a" }.remainingMillis
                 assertTrue(firstRemaining < 120_000)
                 waitFor(scenario) { it.findViewById<Button>(R.id.kids_nav_profile) != null }
                 scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
                 waitFor(scenario) { hasText(it.window.decorView, "Second child") }
-                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_switch_profile))).performClick() }
-                tapDialogText("First child")
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "First child")).performClick() }
                 waitForStorage { storage.read().selectedProfileId == "a" }
                 assertTrue(storage.read().profiles.first { it.id == "a" }.remainingMillis <= firstRemaining)
                 scenario.moveToState(Lifecycle.State.CREATED)
@@ -107,13 +105,51 @@ class KidsChildActivityTest {
                 Thread.sleep(500)
                 waitFor(scenario) { it.findViewById<Button>(R.id.kids_nav_profile) != null }
                 scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
-                waitFor(scenario) { findButton(it.window.decorView, it.getString(R.string.kids_switch_profile)) != null }
-                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_switch_profile))).performClick() }
-                tapDialogText("Second child")
+                waitFor(scenario) { findButton(it.window.decorView, "Second child") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Second child")).performClick() }
                 assertTrue(storage.read().selectedProfileId == "a")
                 enterDialogPin("1234")
                 tapDialogText("Unlock")
                 waitForStorage { storage.read().selectedProfileId == "b" }
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun childCanEditOnlyTheActiveProfileAndChangesSurviveRecreation() {
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "a", "First child", 2)
+            parent.addProfile("1234", "b", "Second child", 2)
+            parent.addProfile("1234", "c", "Hidden child", 2)
+            parent.setProfileEnabled("1234", "c", false)
+            parent.setProfileSwitchLock("1234", true)
+            storage.update { it.copy(selectedProfileId = "a") }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { it.findViewById<Button>(R.id.kids_nav_profile) != null }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
+                scenario.onActivity { activity ->
+                    assertTrue(findButton(activity.window.decorView, "Hidden child") == null)
+                    requireNotNull(activity.findViewById<View>(R.id.kids_edit_profile)).performClick()
+                    requireNotNull(activity.window.decorView.findViewWithTag<View>("kids-avatar-fox")).performClick()
+                }
+                waitForStorage { storage.read().profiles.first { it.id == "a" }.avatarId == "fox" }
+                waitFor(scenario) { it.findViewById<View>(R.id.kids_edit_profile_name) != null }
+                scenario.recreate()
+                waitFor(scenario) { it.findViewById<View>(R.id.kids_edit_profile_name) != null }
+                scenario.onActivity { it.findViewById<View>(R.id.kids_edit_profile_name).performClick() }
+                enterDialogPin("New nickname")
+                tapDialogText("Save")
+                waitForStorage { storage.read().profiles.first { it.id == "a" }.name == "New nickname" }
+                val profiles = storage.read().profiles
+                assertTrue(profiles.first { it.id == "a" }.avatarId == "fox")
+                assertTrue(profiles.first { it.id == "b" }.name == "Second child")
+                assertTrue(profiles.first { it.id == "b" }.avatarId == "initial")
+                assertTrue(storage.read().lockProfileSwitching)
             }
         } finally {
             storage.update { original }
@@ -277,6 +313,62 @@ class KidsChildActivityTest {
                 scenario.onActivity { activity ->
                     assertTrue(findButton(activity.window.decorView, activity.getString(R.string.kids_parent_title)) != null)
                 }
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun sessionExpiryClosesThePickerButAnotherProfileCanStillBeChosen() {
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "a", "First child", 1)
+            parent.addProfile("1234", "b", "Second child", 1)
+            storage.update { state ->
+                state.copy(selectedProfileId = "a", profiles = state.profiles.map { if (it.id == "a") it.copy(remainingMillis = 4_000) else it })
+            }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { it.findViewById<Button>(R.id.kids_nav_profile) != null }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
+                waitFor(scenario) { it.findViewById<View>(R.id.kids_session_ended) != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_switch_profile))).performClick() }
+                waitFor(scenario) { findButton(it.window.decorView, "Second child") != null }
+                Thread.sleep(1_300)
+                scenario.onActivity { activity ->
+                    assertTrue(activity.findViewById<View>(R.id.kids_profile_picker) != null)
+                    assertTrue(activity.findViewById<View>(R.id.kids_edit_profile) == null)
+                    requireNotNull(findButton(activity.window.decorView, "Second child")).performClick()
+                }
+                waitForStorage { storage.read().selectedProfileId == "b" }
+                assertTrue(storage.read().profiles.first { it.id == "a" }.remainingMillis == 0L)
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun sessionExpiryClosesAnOpenProfileNameDialog() {
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "a", "First child", 1)
+            storage.update { state ->
+                state.copy(selectedProfileId = "a", profiles = state.profiles.map { it.copy(remainingMillis = 5_000) })
+            }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { it.findViewById<Button>(R.id.kids_nav_profile) != null }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_edit_profile).performClick() }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_edit_profile_name).performClick() }
+                waitFor(scenario) { it.findViewById<View>(R.id.kids_session_ended) != null }
+                assertTrue(storage.read().profiles.single().remainingMillis == 0L)
+                assertTrue(storage.read().profiles.single().name == "First child")
+                assertTrue(TestAppWindow.activeRoot()?.findAccessibilityNodeInfosByText("Save")?.isEmpty() != false)
             }
         } finally {
             storage.update { original }

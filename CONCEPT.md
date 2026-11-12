@@ -26,6 +26,7 @@ Children can browse and search independently within their approved library.
 ## Child profiles
 
 - Each child has a separate profile and approved library.
+- A child can edit the active profile’s nickname and choose a built-in picture.
 - Parents can assign the same content to more than one profile.
 - Each profile has its own watch history and favorites.
 - Children can switch profiles by default. Parents can optionally require

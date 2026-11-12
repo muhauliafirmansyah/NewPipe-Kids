@@ -5,6 +5,7 @@ package org.schabi.newpipe.kids
 
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -41,14 +42,19 @@ class KidsUiNavigationTest {
             parent.approveSearchItem("1234", setOf("b"), other)
             parent.setVideoHidden("1234", setOf("a"), hidden.id, true)
             val playlist = StoredContentId(0, "visual-test-playlist")
+            val channel = StoredContentId(0, "visual-test-channel")
             storage.update { state ->
-                val approved = ApprovalManager.approveSource(state, setOf("a"), SourceKind.PLAYLIST, playlist)
+                val withChannel = ApprovalManager.approveSource(state, setOf("a"), SourceKind.CHANNEL, channel)
+                val approved = ApprovalManager.approveSource(withChannel, setOf("a"), SourceKind.PLAYLIST, playlist)
                 val started = ApprovalManager.beginSourceRefresh(approved, setOf("a"), SourceKind.PLAYLIST, playlist)
                 val refreshed = ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(first.id, second.id))
                 refreshed.copy(
                     selectedProfileId = "a",
-                    profiles = refreshed.profiles.map { if (it.id == "a") it.copy(favorites = setOf(first.id)) else it },
-                    catalog = refreshed.catalog + ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Sing together", "https://example.org/playlist")
+                    profiles = refreshed.profiles.map { if (it.id == "a") it.copy(favorites = setOf(first.id), avatarId = "fox") else it.copy(avatarId = "panda") },
+                    catalog = refreshed.catalog + listOf(
+                        ParentSearchItem(ParentContentKind.CHANNEL, channel, "Little adventures", "https://example.org/channel", first.thumbnailUrl),
+                        ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Sing together", "https://example.org/playlist", second.thumbnailUrl)
+                    )
                 )
             }
             ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
@@ -86,17 +92,38 @@ class KidsUiNavigationTest {
                 capture("favorites")
                 scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
                 scenario.onActivity { activity ->
-                    assertNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_switch_profile)))
-                    assertNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_parent_title)))
+                    assertNotNull(findButton(activity.window.decorView, "Maya"))
+                    assertNotNull(findButton(activity.window.decorView, "Leo"))
+                    assertNotNull(activity.findViewById<View>(R.id.kids_edit_profile))
                 }
-                capture("profile")
-                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_home).performClick() }
+                capture("profile-picker")
+                if (InstrumentationRegistry.getArguments().getString("capture") == "true") {
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                    waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp && it.findViewById<View>(R.id.kids_profile_picker) != null }
+                    waitFor(scenario) { fullyVisible(it.findViewById(R.id.kids_edit_profile)) }
+                    capture("profile-picker-landscape")
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+                    waitFor(scenario) { it.resources.configuration.screenWidthDp < it.resources.configuration.screenHeightDp && it.findViewById<View>(R.id.kids_edit_profile) != null }
+                }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_edit_profile).performClick() }
+                waitFor(scenario) { it.findViewById<View>(R.id.kids_edit_profile_name) != null }
+                capture("profile-editor")
+                if (InstrumentationRegistry.getArguments().getString("capture") == "true") {
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                    waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp && it.findViewById<View>(R.id.kids_edit_profile_name) != null }
+                    waitFor(scenario) { fullyVisible(it.window.decorView.findViewWithTag("kids-avatar-fox")) }
+                    capture("profile-editor-landscape")
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+                    waitFor(scenario) { it.resources.configuration.screenWidthDp < it.resources.configuration.screenHeightDp && it.findViewById<View>(R.id.kids_edit_profile_name) != null }
+                }
+                scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
                 scenario.onActivity { activity ->
                     requireNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_category_playlists))).performClick()
-                    assertNotNull(findButton(activity.window.decorView, "Playlist: Sing together"))
+                    assertNotNull(findButton(activity.window.decorView, "Sing together"))
                     assertFalse(findButton(activity.window.decorView, first.title) != null)
                 }
-                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_category_all))).performClick() }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_approved_for_you))).performClick() }
                 if (InstrumentationRegistry.getArguments().getString("capture") == "true") {
                     scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
                     waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
@@ -149,6 +176,11 @@ class KidsUiNavigationTest {
         "https://youtu.be/$id",
         "https://i.ytimg.com/vi/$id/hqdefault.jpg"
     )
+
+    private fun fullyVisible(view: View?): Boolean {
+        val bounds = Rect()
+        return view != null && view.getGlobalVisibleRect(bounds) && bounds.height() == view.height && bounds.width() == view.width
+    }
 
     private fun capture(name: String) {
         if (InstrumentationRegistry.getArguments().getString("capture") != "true") return

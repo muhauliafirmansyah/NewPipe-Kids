@@ -8,7 +8,6 @@ import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.Gravity
 import android.view.View
@@ -40,6 +39,11 @@ internal object KidsUi {
         cornerRadius = dp(context, radius).toFloat()
         if (stroke != null) setStroke(dp(context, 1), stroke)
     }
+
+    fun childBackground(): GradientDrawable = GradientDrawable(
+        GradientDrawable.Orientation.TL_BR,
+        intArrayOf(0xFF05065C.toInt(), 0xFF100073.toInt(), 0xFF4B0783.toInt())
+    )
 
     fun background(): GradientDrawable = GradientDrawable(
         GradientDrawable.Orientation.TOP_BOTTOM,
@@ -101,25 +105,7 @@ internal object KidsUi {
         button.compoundDrawablePadding = dp(button.context, if (top) 3 else 8)
     }
 
-    fun profileColor(key: String): Int {
-        val colors = intArrayOf(purple, 0xFFE46A59.toInt(), 0xFF158D9F.toInt(), 0xFFE09A30.toInt())
-        return colors[(key.hashCode() and Int.MAX_VALUE) % colors.size]
-    }
-
-    fun profileIcon(button: Button, key: String, top: Boolean = false) {
-        val context = button.context
-        val person = ContextCompat.getDrawable(context, R.drawable.ic_person)?.mutate() ?: return
-        person.setTint(Color.WHITE)
-        val drawable = LayerDrawable(arrayOf(shape(context, profileColor(key), 100), person)).apply {
-            val inset = dp(context, 5)
-            setLayerInset(1, inset, inset, inset, inset)
-            setBounds(0, 0, dp(context, 28), dp(context, 28))
-        }
-        if (top) button.setCompoundDrawables(null, drawable, null, null) else button.setCompoundDrawablesRelative(drawable, null, null, null)
-        button.compoundDrawablePadding = dp(context, if (top) 2 else 8)
-    }
-
-    fun logo(context: Context): View = LinearLayout(context).apply {
+    fun logo(context: Context, onDark: Boolean = false): View = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         val mark = TextView(context).apply {
@@ -135,8 +121,8 @@ internal object KidsUi {
         val name = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(context, 9), 0, 0, 0)
-            addView(text(context, context.getString(R.string.kids_brand_small), 9f, muted, true).apply { letterSpacing = 0.08f })
-            addView(text(context, context.getString(R.string.kids_brand_title), 21f, ink, true))
+            addView(text(context, context.getString(R.string.kids_brand_small), 9f, if (onDark) 0xFFCBC4F5.toInt() else muted, true).apply { letterSpacing = 0.08f })
+            addView(text(context, context.getString(R.string.kids_brand_title), 21f, if (onDark) white else ink, true))
         }
         addView(name)
         contentDescription = context.getString(R.string.kids_brand_accessibility)

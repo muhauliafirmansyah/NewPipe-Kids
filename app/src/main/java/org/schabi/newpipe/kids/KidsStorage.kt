@@ -65,7 +65,8 @@ data class ChildProfile(
     val favorites: Set<StoredContentId> = emptySet(),
     val history: List<StoredWatch> = emptyList(),
     val autoplay: Boolean = true,
-    val sessionRevision: Long = 0
+    val sessionRevision: Long = 0,
+    val avatarId: String = "initial"
 ) {
     init {
         require(id.isNotBlank() && name.isNotBlank())

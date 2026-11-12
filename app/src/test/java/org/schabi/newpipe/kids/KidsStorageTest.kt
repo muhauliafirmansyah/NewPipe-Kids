@@ -18,7 +18,8 @@ class KidsStorageTest {
             sessionLimitMinutes = 30,
             remainingMillis = 25_000,
             sources = listOf(source),
-            hiddenVideos = setOf(video)
+            hiddenVideos = setOf(video),
+            avatarId = "fox"
         )
         val other = ChildProfile(
             "two",
@@ -32,6 +33,11 @@ class KidsStorageTest {
         assertEquals(state, restored)
         assertFalse(restored.profiles[0].approvedLibrary().canPlay(video.toContentId()))
         assertTrue(restored.profiles[1].approvedLibrary().canPlay(video.toContentId()))
+    }
+
+    @Test fun `older saved profiles without a picture use the initial`() {
+        val state = KidsStateCodec.decode("""{"profiles":[{"id":"old","name":"Alex","sessionLimitMinutes":30,"remainingMillis":1000}]}""")
+        assertEquals("initial", state.profiles.single().avatarId)
     }
 
     @Test(expected = IllegalArgumentException::class)

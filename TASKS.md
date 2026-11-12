@@ -223,3 +223,11 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
 - [x] Verify navigation, approved-content filtering, rotation, portrait and
   landscape layouts, and live playback on an Android emulator.
 - [ ] Review the redesigned screens and playback on a physical Android device.
+
+## 8. Reference-based child screens
+
+- [x] Use a dark blue and purple child home with large approved channel and
+  playlist cards, while keeping child search and the approved-content filters.
+- [x] Add a visual profile picker with selectable pictures and nickname editing
+  for the active profile; preserve parent-locked switching and session limits.
+- [ ] Review the updated child screens on a physical Android device.

@@ -15,4 +15,7 @@
     <item name="kids_nav_profile" type="id" />
     <item name="kids_parent_entry" type="id" />
     <item name="kids_content_scroll" type="id" />
+    <item name="kids_edit_profile" type="id" />
+    <item name="kids_edit_profile_name" type="id" />
+    <item name="kids_profile_picker" type="id" />
 </resources>
