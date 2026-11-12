@@ -110,6 +110,8 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
     refresh on an emulator.
 - [x] Preserve the last successful library on refresh failure and continue
   applying local hides and approval removals.
+  - [x] Verify an unreachable source keeps cached videos while hides and
+    removals still take effect on an emulator.
 
 ## 4. Child experience and playback
 
