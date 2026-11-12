@@ -45,6 +45,13 @@
     </style>
     <style name="Base.LightTheme" parent="Base.V21.LightTheme" />
     <style name="LightTheme" parent="Base.LightTheme"/>
+    <style name="KidsTheme" parent="Base.LightTheme">
+        <item name="colorAccent">#6844D6</item>
+        <item name="android:statusBarColor">#F9FEFF</item>
+        <item name="android:navigationBarColor">#FFFFFF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
 
     <!-- Dark Theme -->
     <style name="Base.V21.DarkTheme" parent="Base">

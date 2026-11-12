@@ -6,11 +6,14 @@ package org.schabi.newpipe.kids
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.schabi.newpipe.extractor.Image
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.util.image.ImageStrategy
+import org.schabi.newpipe.util.image.PreferredImageQuality
 
 class ParentContentSearchTest {
     @Test fun `search items get validated YouTube identities`() {
@@ -23,6 +26,16 @@ class ParentContentSearchTest {
         assertEquals(ParentContentKind.CHANNEL, ParentContentSearch.toItem(channel)?.kind)
         val playlist = PlaylistInfoItem(service, "https://www.youtube.com/playlist?list=PL8dPuuaLjXtOAKed_MxxWBNaPno5h3Zs8", "Playlist")
         assertEquals(ParentContentKind.PLAYLIST, ParentContentSearch.toItem(playlist)?.kind)
+    }
+
+    @Test fun `search stores an appropriately sized thumbnail for larger cards`() {
+        val stream = StreamInfoItem(ServiceList.YouTube.serviceId, "https://youtu.be/e_04ZrNroTo", "Song", StreamType.VIDEO_STREAM)
+        stream.thumbnails = listOf(
+            Image("https://example.org/small.jpg", 90, 160, Image.ResolutionLevel.LOW),
+            Image("https://example.org/medium.jpg", 250, 444, Image.ResolutionLevel.MEDIUM)
+        )
+        ImageStrategy.setPreferredImageQuality(PreferredImageQuality.MEDIUM)
+        assertEquals("https://example.org/medium.jpg", ParentContentSearch.toItem(stream)?.thumbnailUrl)
     }
 
     @Test fun `invalid search items are not exposed as approvable content`() {

@@ -4,7 +4,7 @@ NewPipe-Kids is an independent, experimental source-code fork of [NewPipe](https
 
 ## Status
 
-**Early development: not ready for children.** The experimental child launcher, parent controls, session timer, approved-library search, and player are connected. Selected flows have been tested on an emulator and a physical Android phone; the app has not yet been audited for all bypasses or validated for production use. The Kids flow supports YouTube, PeerTube, and media.ccc.de; parents can choose a PeerTube server. The current player supports direct video streams, including separate video and audio streams where available.
+**Early development: not ready for children.** The experimental child launcher, parent controls, session timer, approved-library search, and player are connected. The redesigned screens have been checked on an emulator; earlier flows were also tested on a physical Android phone. The redesign still needs a physical-device review, and the app has not yet been audited for all bypasses or validated for production use. The Kids flow supports YouTube, PeerTube, and media.ccc.de; parents can choose a PeerTube server. The current player supports direct video streams, including separate video and audio streams where available.
 
 The development build uses NewPipe Extractor v0.27.0 and an isolated YouTube playback fallback. The fallback resolves only the video already selected for playback; it does not choose or approve content. Playback depends on upstream service behavior and needs continued regression testing.
 

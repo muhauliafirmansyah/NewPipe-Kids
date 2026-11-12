@@ -1,0 +1,182 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+package org.schabi.newpipe.kids
+
+import android.content.pm.ActivityInfo
+import android.graphics.Bitmap
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.EditText
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.schabi.newpipe.R
+
+@RunWith(AndroidJUnit4::class)
+class KidsUiNavigationTest {
+    @Test fun navigationAndFiltersStayWithinTheSelectedApprovedLibrary() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val storage = KidsStorage.get(instrumentation.targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "a", "Maya", 30)
+            parent.addProfile("1234", "b", "Leo", 30)
+            val first = video("e_04ZrNroTo", "A playful song for kids")
+            val second = video("jNQXAC9IVRw", "Meet the animals")
+            val hidden = video("dQw4w9WgXcQ", "Hidden video")
+            val other = video("9bZkp7q19f0", "Another profile video")
+            listOf(first, second, hidden).forEach { parent.approveSearchItem("1234", setOf("a"), it) }
+            parent.approveSearchItem("1234", setOf("b"), other)
+            parent.setVideoHidden("1234", setOf("a"), hidden.id, true)
+            val playlist = StoredContentId(0, "visual-test-playlist")
+            storage.update { state ->
+                val approved = ApprovalManager.approveSource(state, setOf("a"), SourceKind.PLAYLIST, playlist)
+                val started = ApprovalManager.beginSourceRefresh(approved, setOf("a"), SourceKind.PLAYLIST, playlist)
+                val refreshed = ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(first.id, second.id))
+                refreshed.copy(
+                    selectedProfileId = "a",
+                    profiles = refreshed.profiles.map { if (it.id == "a") it.copy(favorites = setOf(first.id)) else it },
+                    catalog = refreshed.catalog + ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Sing together", "https://example.org/playlist")
+                )
+            }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { findButton(it.window.decorView, first.title) != null }
+                scenario.onActivity { activity ->
+                    assertNotNull(activity.findViewById<View>(R.id.kids_nav_home))
+                    assertNotNull(activity.findViewById<View>(R.id.kids_nav_search))
+                    assertNotNull(activity.findViewById<View>(R.id.kids_nav_stuff))
+                    assertNotNull(activity.findViewById<View>(R.id.kids_nav_profile))
+                    assertFalse(findButton(activity.window.decorView, hidden.title) != null)
+                    assertFalse(findButton(activity.window.decorView, other.title) != null)
+                }
+                capture("home")
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_search).performClick() }
+                scenario.onActivity { activity ->
+                    activity.findViewById<EditText>(R.id.kids_child_search).setText("animals")
+                    assertNotNull(findButton(activity.window.decorView, second.title))
+                    assertFalse(findButton(activity.window.decorView, first.title) != null)
+                    assertFalse(findButton(activity.window.decorView, hidden.title) != null)
+                }
+                capture("search")
+                scenario.recreate()
+                waitFor(scenario) { it.findViewById<EditText>(R.id.kids_child_search)?.text?.toString() == "animals" }
+                scenario.onActivity { activity ->
+                    assertNotNull(findButton(activity.window.decorView, second.title))
+                    assertFalse(findButton(activity.window.decorView, hidden.title) != null)
+                    activity.onBackPressedDispatcher.onBackPressed()
+                    assertTrue(activity.findViewById<Button>(R.id.kids_nav_home).isSelected)
+                }
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_stuff).performClick() }
+                scenario.onActivity { activity ->
+                    assertNotNull(findButton(activity.window.decorView, first.title))
+                    assertFalse(findButton(activity.window.decorView, second.title) != null)
+                }
+                capture("favorites")
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_profile).performClick() }
+                scenario.onActivity { activity ->
+                    assertNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_switch_profile)))
+                    assertNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_parent_title)))
+                }
+                capture("profile")
+                scenario.onActivity { it.findViewById<Button>(R.id.kids_nav_home).performClick() }
+                scenario.onActivity { activity ->
+                    requireNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_category_playlists))).performClick()
+                    assertNotNull(findButton(activity.window.decorView, "Playlist: Sing together"))
+                    assertFalse(findButton(activity.window.decorView, first.title) != null)
+                }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, it.getString(R.string.kids_category_all))).performClick() }
+                if (InstrumentationRegistry.getArguments().getString("capture") == "true") {
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+                    waitFor(scenario) { it.resources.configuration.screenWidthDp > it.resources.configuration.screenHeightDp }
+                    waitFor(scenario) { findButton(it.window.decorView, first.title) != null }
+                    capture("home-landscape")
+                    scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
+                }
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun captureSetupAndParentScreensWhenRequested() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("capture") == "true")
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            ActivityScenario.launch(KidsSetupActivity::class.java).use { scenario ->
+                scenario.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+                capture("setup")
+            }
+            ParentSettings(storage).setup("1234", "a", "Maya", 30)
+            ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
+                scenario.onActivity { it.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+                capture("parent-unlock")
+                scenario.onActivity { activity ->
+                    activity.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
+                    activity.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
+                }
+                val deadline = System.currentTimeMillis() + 10_000
+                var ready = false
+                while (!ready && System.currentTimeMillis() < deadline) {
+                    scenario.onActivity { ready = findButton(it.window.decorView, it.getString(R.string.kids_parent_add_content)) != null }
+                    if (!ready) Thread.sleep(50)
+                }
+                assertTrue("Parent screen did not open", ready)
+                capture("parent-approved")
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    private fun video(id: String, title: String) = ParentSearchItem(
+        ParentContentKind.VIDEO,
+        VideoIdentity.youtube(id),
+        title,
+        "https://youtu.be/$id",
+        "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+    )
+
+    private fun capture(name: String) {
+        if (InstrumentationRegistry.getArguments().getString("capture") != "true") return
+        Thread.sleep(1_000)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (TestAppWindow.activeRoot() == null && System.currentTimeMillis() < deadline) Thread.sleep(50)
+        checkNotNull(TestAppWindow.activeRoot()) { "The test app is not in the foreground" }
+        val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+        File(instrumentation.targetContext.cacheDir, "kids-ui-$name.png").outputStream().use {
+            check(screenshot.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        screenshot.recycle()
+    }
+
+    private fun waitFor(scenario: ActivityScenario<KidsChildActivity>, condition: (KidsChildActivity) -> Boolean) {
+        val deadline = System.currentTimeMillis() + 10_000
+        var ready = false
+        while (!ready && System.currentTimeMillis() < deadline) {
+            scenario.onActivity { ready = condition(it) }
+            if (!ready) Thread.sleep(50)
+        }
+        assertTrue("Timed out waiting for the child screen", ready)
+    }
+
+    private fun findButton(view: View, text: String): Button? {
+        if (view is Button && view.text.toString() == text) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) findButton(view.getChildAt(index), text)?.let { return it }
+        return null
+    }
+}

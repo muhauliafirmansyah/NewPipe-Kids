@@ -7,9 +7,11 @@ implemented and verified.
 **Current state:** The experimental launcher, parent screens, child library,
 session timer, and player are connected. Unit tests, Android 15 emulator tests,
 and Android 16 phone tests cover selected flows, including playback and stopping
-after a hide. The phone's 15-minute refresh verification and a full bypass review
-are still outstanding; the app is not yet ready for use as a child-restricted
-experience. The Kids flow supports YouTube, PeerTube, and media.ccc.de, using
+after a hide. The redesigned screens have been checked on an emulator; the prior
+phone tests predate the redesign. Physical review of the new UI, the phone's
+15-minute refresh verification, and a broader bypass review are still outstanding;
+the app is not yet ready for use as a child-restricted experience. The Kids flow
+supports YouTube, PeerTube, and media.ccc.de, using
 direct or merged video streams.
 Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
 
@@ -211,3 +213,13 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   in [RELEASE_REVIEW.md](RELEASE_REVIEW.md).
 - [ ] Before an end-user release, choose a distinct app name and identity and
   provide the corresponding source and notices required for that release.
+
+## 7. Child-friendly UI refresh
+
+- [x] Add Home, Search, Your stuff, and Profile navigation around the approved
+  library, with category filters and profile-specific favorites.
+- [x] Redesign setup, parent management, collections, and playback screens with
+  a consistent visual style and accessible controls.
+- [x] Verify navigation, approved-content filtering, rotation, portrait and
+  landscape layouts, and live playback on an Android emulator.
+- [ ] Review the redesigned screens and playback on a physical Android device.

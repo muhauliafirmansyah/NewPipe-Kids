@@ -45,9 +45,12 @@ flowchart TD
     H -->|Choose another video| B
 ```
 
-- The child can turn autoplay on or off.
-- Search can match approved videos, channels, and playlists. A child can also
-  view favorites; hidden or disabled content stays out of those views.
+- The child can turn autoplay on or off from the player or Profile tab.
+- Home presents approved videos and collections with category filters. Search
+  matches only approved videos, channels, and playlists. Your stuff contains the
+  active profile's favorites, and Profile contains switching and settings.
+- The parent-mode lock is available from the child screens. Hidden or disabled
+  content stays out of child browsing, search, and favorites.
 - Outside a playlist, autoplay prefers unwatched approved videos. Once all
   approved videos have been watched, it chooses the one whose most recent
   viewing was longest ago. A video counts as watched after 90% has played.
@@ -60,7 +63,8 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    A[Child home] --> B[Switch profile]
+    A[Child home] --> P[Profile tab]
+    P --> B[Switch profile]
     B --> C{Parent lock enabled?}
     C -->|No| D[Choose another profile]
     C -->|Yes| E[Parent enters PIN]

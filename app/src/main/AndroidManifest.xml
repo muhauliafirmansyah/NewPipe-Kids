@@ -43,7 +43,7 @@
             android:name=".kids.KidsChildActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/LightTheme">
+            android:theme="@style/KidsTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -90,12 +90,12 @@
         <activity
             android:name=".kids.KidsParentActivity"
             android:exported="false"
-            android:theme="@style/LightTheme" />
+            android:theme="@style/KidsTheme" />
 
         <activity
             android:name=".kids.KidsSetupActivity"
             android:exported="false"
-            android:theme="@style/LightTheme" />
+            android:theme="@style/KidsTheme" />
 
         <activity
             android:name=".MainActivity"

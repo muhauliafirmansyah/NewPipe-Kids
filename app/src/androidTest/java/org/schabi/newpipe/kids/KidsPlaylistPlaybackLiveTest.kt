@@ -51,7 +51,9 @@ class KidsPlaylistPlaybackLiveTest {
             ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
                 waitFor(scenario) { findButton(it.window.decorView, "Playlist: Test playlist") != null }
                 scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Playlist: Test playlist")).performClick() }
-                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "First song")).performClick() }
+                scenario.onActivity { activity ->
+                    requireNotNull(activity.window.decorView.findViewWithTag<View>("kids-thumbnail-e_04ZrNroTo")).performClick()
+                }
                 waitForPlaying(scenario, "First song")
                 seekToEnd(scenario)
                 waitForPlaying(scenario, "Second song")

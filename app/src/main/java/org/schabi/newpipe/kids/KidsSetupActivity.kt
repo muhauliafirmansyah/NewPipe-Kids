@@ -26,6 +26,12 @@ class KidsSetupActivity : AppCompatActivity() {
         val confirmation = findViewById<EditText>(R.id.kids_parent_pin_confirm)
         val error = findViewById<TextView>(R.id.kids_setup_error)
         val create = findViewById<Button>(R.id.kids_setup_create)
+        listOf(name, minutes, pin, confirmation).forEach(KidsUi::input)
+        create.isAllCaps = false
+        create.textSize = 15f
+        create.backgroundTintList = null
+        create.background = KidsUi.ripple(this, KidsUi.ink)
+        create.setTextColor(KidsUi.white)
         val model = ViewModelProvider(this)[KidsSetupViewModel::class.java]
         model.status.observe(this) { status ->
             create.isEnabled = status != KidsSetupStatus.SAVING

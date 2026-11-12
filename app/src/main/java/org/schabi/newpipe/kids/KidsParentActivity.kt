@@ -3,15 +3,19 @@
  */
 package org.schabi.newpipe.kids
 
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.text.TextUtils
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -28,6 +32,7 @@ import org.schabi.newpipe.R
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.services.peertube.PeertubeInstance
 import org.schabi.newpipe.util.PeertubeHelper
+import org.schabi.newpipe.util.image.CoilHelper
 
 /** PIN-protected profile and content management. */
 class KidsParentActivity : AppCompatActivity() {
@@ -47,11 +52,33 @@ class KidsParentActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = KidsUi.background()
+        }
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+        }
+        toolbar.addView(KidsUi.logo(this), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val done = KidsUi.button(this, getString(R.string.kids_parent_done), KidsUi.ButtonStyle.SOFT).apply {
+            gravity = Gravity.CENTER
+            setOnClickListener { finish() }
+        }
+        toolbar.addView(done, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)))
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(24))
+            setPadding(dp(16), dp(8), dp(16), dp(24))
         }
-        setContentView(ScrollView(this).apply { addView(root) })
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            addView(root)
+        }
+        page.addView(toolbar)
+        page.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        setContentView(page)
         showUnlock()
     }
 
@@ -83,12 +110,15 @@ class KidsParentActivity : AppCompatActivity() {
     private fun showUnlock() {
         root.removeAllViews()
         label(getString(R.string.kids_parent_title))
+        label(getString(R.string.kids_parent_unlock_caption))
         val input = EditText(this).apply {
             hint = getString(R.string.kids_parent_pin_hint)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
             isSaveEnabled = false
+            setSingleLine(true)
+            KidsUi.input(this)
         }
-        root.addView(input)
+        addBlock(input, 18)
         val error = label("")
         error.visibility = View.GONE
         val unlock = button(getString(R.string.kids_parent_unlock)) {
@@ -129,6 +159,7 @@ class KidsParentActivity : AppCompatActivity() {
     private fun showApproved(state: KidsState) {
         root.removeAllViews()
         label(getString(R.string.kids_parent_approved))
+        label(getString(R.string.kids_parent_caption))
         button(getString(R.string.kids_parent_profiles)) { showProfiles(state) }
         button(getString(R.string.kids_parent_add_content)) { showSearch() }
         if (state.profiles.isEmpty()) {
@@ -146,19 +177,26 @@ class KidsParentActivity : AppCompatActivity() {
         }
         val sourceVideos = profile.sources.flatMap { it.videos }.toSet()
         val videos = profile.approvedVideos + profile.hiddenVideos.filter { it in sourceVideos }
-        if (videos.isEmpty() && profile.sources.isEmpty()) label(getString(R.string.kids_parent_empty_approved))
+        if (videos.isEmpty() && profile.sources.isEmpty()) {
+            val empty = KidsUi.text(this, getString(R.string.kids_parent_empty_approved), 14f, KidsUi.muted).apply {
+                background = KidsUi.shape(this@KidsParentActivity, Color.WHITE, 16, KidsUi.border)
+                setPadding(dp(16), dp(20), dp(16), dp(20))
+            }
+            addBlock(empty, 14)
+        }
         videos.forEach { id ->
             val item = state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == id }
             val title = item?.title ?: id.id
             val hidden = id in profile.hiddenVideos
-            button(if (hidden) "$title (${getString(R.string.kids_parent_hidden)})" else title) {
+            contentButton(item, if (hidden) "$title (${getString(R.string.kids_parent_hidden)})" else title) {
                 showApprovedVideo(profile, id, title, hidden)
             }
         }
         profile.sources.forEach { source ->
             val kind = if (source.kind == SourceKind.CHANNEL) ParentContentKind.CHANNEL else ParentContentKind.PLAYLIST
             val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
-            button(if (source.enabled) title else "$title (${getString(R.string.kids_parent_hidden)})") {
+            val item = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }
+            contentButton(item, if (source.enabled) title else "$title (${getString(R.string.kids_parent_hidden)})") {
                 showApprovedSource(profile, source, title)
             }
         }
@@ -212,6 +250,7 @@ class KidsParentActivity : AppCompatActivity() {
 
     private fun showSearch(query: String = "", results: List<ParentSearchItem> = emptyList(), page: ParentSearchPage? = null) {
         root.removeAllViews()
+        label(getString(R.string.kids_parent_search_title))
         button(getString(R.string.kids_parent_back_approved)) { loadApproved() }
         val services = listOf(ServiceList.YouTube, ServiceList.PeerTube, ServiceList.MediaCCC)
         val selected = VideoIdentity.service(searchServiceId)
@@ -229,8 +268,10 @@ class KidsParentActivity : AppCompatActivity() {
             hint = getString(R.string.kids_parent_search_hint)
             setText(query)
             id = R.id.kids_parent_search_input
+            setSingleLine(true)
+            KidsUi.input(this)
         }
-        root.addView(input)
+        addBlock(input, 10)
         val search = button(getString(R.string.kids_parent_search)) {
             val text = input.text.toString().trim()
             if (text.isNotEmpty()) {
@@ -242,7 +283,8 @@ class KidsParentActivity : AppCompatActivity() {
             }
         }
         search.id = R.id.kids_parent_search_button
-        results.forEach { item -> button(item.title) { showSearchItem(item) }.tag = "kids-result-${item.kind.name}" }
+        if (results.isNotEmpty()) label(getString(R.string.kids_parent_search_results))
+        results.forEach { item -> contentButton(item, item.title) { showSearchItem(item) }.tag = "kids-result-${item.kind.name}" }
         if (page?.next != null) {
             button(getString(R.string.kids_parent_more)) {
                 runTask(
@@ -565,15 +607,66 @@ class KidsParentActivity : AppCompatActivity() {
         }
     }
 
-    private fun label(text: String): TextView = TextView(this).also {
-        it.text = text
-        root.addView(it)
+    private fun label(text: String): TextView = KidsUi.text(this, text, if (root.childCount == 0) 25f else 14f, if (root.childCount == 0) KidsUi.ink else KidsUi.muted, root.childCount == 0).also {
+        addBlock(it, if (root.childCount == 0) 8 else 8)
     }
-    private fun button(text: String, action: () -> Unit): Button = Button(this).also {
-        it.text = text
-        it.setOnClickListener { if (!busy) action() }
-        root.addView(it)
+
+    private fun button(text: String, action: () -> Unit): Button {
+        val primary = text in setOf(getString(R.string.kids_parent_unlock), getString(R.string.kids_parent_add_content), getString(R.string.kids_parent_add_profile), getString(R.string.kids_parent_search), getString(R.string.kids_parent_approve))
+        return KidsUi.button(this, text, if (primary) KidsUi.ButtonStyle.PRIMARY else KidsUi.ButtonStyle.SURFACE).also {
+            if (primary) it.gravity = Gravity.CENTER
+            it.maxLines = 2
+            it.ellipsize = TextUtils.TruncateAt.END
+            it.setOnClickListener { if (!busy) action() }
+            addBlock(it, 10)
+        }
     }
+
+    private fun contentButton(item: ParentSearchItem?, title: String, action: () -> Unit): Button {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = KidsUi.shape(this@KidsParentActivity, Color.WHITE, 16, KidsUi.border)
+            clipToOutline = true
+            setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = KidsUi.shape(this@KidsParentActivity, KidsUi.purpleLight, 10)
+            clipToOutline = true
+            contentDescription = null
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        CoilHelper.loadThumbnail(image, item?.thumbnailUrl)
+        row.addView(image, LinearLayout.LayoutParams(dp(82), dp(54)))
+        val choice = KidsUi.button(this, title, KidsUi.ButtonStyle.GHOST).apply {
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            setOnClickListener { if (!busy) action() }
+        }
+        val details = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        details.addView(choice, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        if (item != null) {
+            val kind = when (item.kind) {
+                ParentContentKind.VIDEO -> R.string.kids_parent_kind_video
+                ParentContentKind.CHANNEL -> R.string.kids_parent_kind_channel
+                ParentContentKind.PLAYLIST -> R.string.kids_parent_kind_playlist
+            }
+            val service = runCatching { VideoIdentity.service(item.id.serviceId).serviceInfo.name }.getOrDefault("")
+            val meta = KidsUi.text(this, listOf(getString(kind), service).filter { it.isNotBlank() }.joinToString(" · "), 12f, KidsUi.muted).apply {
+                setPadding(dp(16), 0, dp(8), dp(4))
+            }
+            details.addView(meta)
+        }
+        row.addView(details, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addBlock(row, 10)
+        return choice
+    }
+
+    private fun addBlock(view: View, top: Int) {
+        root.addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) })
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     override fun onStop() {

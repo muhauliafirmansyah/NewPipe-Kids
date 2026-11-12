@@ -4,21 +4,32 @@
 package org.schabi.newpipe.kids
 
 import android.content.Intent
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.text.Editable
 import android.text.InputType
+import android.text.TextUtils
 import android.text.TextWatcher
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.exoplayer2.ExoPlayer
@@ -42,6 +53,9 @@ class KidsChildActivity : AppCompatActivity() {
     // Accessed on worker only; all session operations are serialized there.
     private var runningProfileId: String? = null
     private lateinit var root: LinearLayout
+    private lateinit var header: LinearLayout
+    private lateinit var navigation: LinearLayout
+    private lateinit var contentScroll: ScrollView
     private var timeLabel: TextView? = null
     private var visible = false
     private var generation = 0
@@ -51,9 +65,12 @@ class KidsChildActivity : AppCompatActivity() {
     private var setupRequested = false
     private var busy = false
     private enum class Screen { HOME, SOURCE, LOADING, PLAYER, MESSAGE }
+    private enum class Tab { HOME, SEARCH, STUFF, PROFILE }
+    private enum class Category { ALL, VIDEOS, PLAYLISTS, CHANNELS }
     private var screen = Screen.HOME
+    private var activeTab = Tab.HOME
+    private var category = Category.ALL
     private var searchText = ""
-    private var favoritesOnly = false
     private var playbackGeneration = 0
     private var playback: ActivePlayback? = null
     private var incomingVideo: StoredContentId? = null
@@ -69,12 +86,80 @@ class KidsChildActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        activeTab = runCatching { Tab.valueOf(savedInstanceState?.getString("kids_tab").orEmpty()) }.getOrDefault(Tab.HOME)
+        category = runCatching { Category.valueOf(savedInstanceState?.getString("kids_category").orEmpty()) }.getOrDefault(Category.ALL)
+        searchText = savedInstanceState?.getString("kids_search").orEmpty()
         readIncomingIntent(intent)
+        val chrome = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = KidsUi.background()
+        }
+        header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(if (isLandscape()) 4 else 9), dp(16), dp(if (isLandscape()) 4 else 9))
+        }
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            setPadding(dp(16), dp(4), dp(16), dp(20))
         }
-        setContentView(ScrollView(this).apply { addView(root) })
+        contentScroll = ScrollView(this).apply {
+            id = R.id.kids_content_scroll
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            addView(root)
+        }
+        navigation = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(Color.WHITE)
+            elevation = dp(8).toFloat()
+        }
+        chrome.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        chrome.addView(contentScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        chrome.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(if (isLandscape()) 56 else 68)))
+        setContentView(chrome)
+        renderHeader(null)
+        navigation.visibility = View.GONE
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (!handleBack()) {
+                        isEnabled = false
+                        onBackPressedDispatcher.onBackPressed()
+                        isEnabled = true
+                    }
+                }
+            }
+        )
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("kids_tab", activeTab.name)
+        outState.putString("kids_category", category.name)
+        outState.putString("kids_search", searchText)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun handleBack(): Boolean = when {
+        screen == Screen.PLAYER || screen == Screen.LOADING || screen == Screen.MESSAGE -> {
+            returnToLibrary()
+            true
+        }
+
+        screen == Screen.SOURCE && displayedState != null -> {
+            contentScroll.scrollTo(0, 0)
+            display(requireNotNull(displayedState))
+            true
+        }
+
+        activeTab != Tab.HOME -> {
+            navigate(Tab.HOME)
+            true
+        }
+
+        else -> false
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -150,7 +235,9 @@ class KidsChildActivity : AppCompatActivity() {
 
     private fun showSetup() {
         root.removeAllViews()
-        label(getString(R.string.kids_setup_description))
+        renderHeader(null)
+        navigation.visibility = View.GONE
+        heading(getString(R.string.kids_setup_title), getString(R.string.kids_setup_description))
         button(getString(R.string.kids_setup_title)) { openSetup() }
         if (!setupRequested) openSetup()
     }
@@ -162,102 +249,192 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun display(state: KidsState) {
+        val restoreSearchFocus = screen == Screen.HOME && (activeTab == Tab.SEARCH || activeTab == Tab.STUFF) &&
+            root.findViewById<EditText>(R.id.kids_child_search)?.hasFocus() == true
         screen = Screen.HOME
         openSource = null
         displayedState = state
         renderedHomeState = state
         root.removeAllViews()
-        timeLabel = null
         val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId && it.enabled }
+        renderHeader(profile)
         if (profile == null) {
-            label(getString(R.string.kids_choose_profile))
-            val profiles = ProfileManager.visibleProfiles(state)
-            if (profiles.isEmpty()) label(getString(R.string.kids_no_enabled_profiles))
-            profiles.forEach { child -> button(child.name) { selectProfile(child.id) } }
-            parentButton()
+            navigation.visibility = View.GONE
+            showProfilePicker(state)
             return
         }
-        label(profile.name)
-        timeLabel = label("").apply { id = R.id.kids_time_remaining }
-        showRemaining(profile.remainingMillis)
+        renderNavigation()
+        if (profile.remainingMillis <= 0) {
+            showSessionEnded(state)
+            return
+        }
+        when (activeTab) {
+            Tab.HOME -> showHome(state, profile)
+            Tab.SEARCH -> showSearch(state, profile, favorites = false)
+            Tab.STUFF -> showSearch(state, profile, favorites = true)
+            Tab.PROFILE -> showChildProfile(state, profile)
+        }
+        if (restoreSearchFocus) {
+            root.findViewById<EditText>(R.id.kids_child_search)?.let { input ->
+                input.requestFocus()
+                input.setSelection(input.text.length)
+            }
+        }
+        consumeIncomingVideo(state)
+    }
+
+    private fun renderHeader(profile: ChildProfile?) {
+        header.removeAllViews()
+        header.addView(KidsUi.logo(this), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        timeLabel = null
+        if (profile != null) {
+            timeLabel = KidsUi.text(this, "", 12f, KidsUi.ink, true).apply {
+                id = R.id.kids_time_remaining
+                gravity = Gravity.CENTER
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+                background = KidsUi.shape(this@KidsChildActivity, Color.WHITE, 14)
+            }
+            header.addView(timeLabel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            showRemaining(profile.remainingMillis)
+        }
+        val parent = KidsUi.button(this, "", KidsUi.ButtonStyle.SOFT).apply {
+            id = R.id.kids_parent_entry
+            contentDescription = getString(R.string.kids_parent_entry_description)
+            gravity = Gravity.CENTER
+            val inset = if (isLandscape()) 8 else 12
+            setPadding(dp(inset), dp(inset), dp(inset), dp(inset))
+            KidsUi.icon(this, R.drawable.ic_kids_lock, KidsUi.ink)
+            setOnClickListener { if (!busy) startActivity(Intent(this@KidsChildActivity, KidsParentActivity::class.java)) }
+        }
+        val size = if (isLandscape()) 40 else 48
+        header.addView(parent, LinearLayout.LayoutParams(dp(size), dp(size)).apply { marginStart = dp(8) })
+    }
+
+    private fun renderNavigation() {
+        navigation.removeAllViews()
+        navigation.visibility = View.VISIBLE
+        val tabs = listOf(
+            Triple(Tab.HOME, R.string.kids_nav_home, R.drawable.ic_home),
+            Triple(Tab.SEARCH, R.string.kids_nav_search, R.drawable.ic_search),
+            Triple(Tab.STUFF, R.string.kids_nav_stuff, R.drawable.ic_kids_star),
+            Triple(Tab.PROFILE, R.string.kids_nav_profile, R.drawable.ic_person)
+        )
+        tabs.forEach { (tab, title, icon) ->
+            val selected = activeTab == tab
+            val item = KidsUi.button(this, getString(title), KidsUi.ButtonStyle.GHOST).apply {
+                id = when (tab) {
+                    Tab.HOME -> R.id.kids_nav_home
+                    Tab.SEARCH -> R.id.kids_nav_search
+                    Tab.STUFF -> R.id.kids_nav_stuff
+                    Tab.PROFILE -> R.id.kids_nav_profile
+                }
+                gravity = Gravity.CENTER
+                textSize = 11f
+                setPadding(dp(2), dp(5), dp(2), dp(4))
+                setTextColor(if (selected) KidsUi.ink else KidsUi.muted)
+                contentDescription = getString(R.string.kids_nav_description, getString(title))
+                isSelected = selected
+                if (tab == Tab.PROFILE) {
+                    KidsUi.profileIcon(this, displayedState?.selectedProfileId.orEmpty(), top = true)
+                } else {
+                    KidsUi.icon(this, icon, if (selected) KidsUi.purple else KidsUi.muted, top = true, size = 24)
+                }
+                setOnClickListener { navigate(tab) }
+            }
+            navigation.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
+    }
+
+    private fun navigate(tab: Tab) {
+        if (busy) return
+        (currentFocus as? EditText)?.let { input ->
+            (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
+        }
+        stopPlayback()
+        activeTab = tab
+        category = Category.ALL
+        searchText = ""
+        contentScroll.scrollTo(0, 0)
+        displayedState?.let(::display)
+    }
+
+    private fun showProfilePicker(state: KidsState) {
+        heading(getString(R.string.kids_choose_profile), getString(R.string.kids_profile_picker_caption))
+        val profiles = ProfileManager.visibleProfiles(state)
+        if (profiles.isEmpty()) emptyCard(getString(R.string.kids_no_enabled_profiles))
+        profiles.forEach { profile ->
+            val choice = KidsUi.button(this, profile.name).apply {
+                KidsUi.profileIcon(this, profile.id)
+                setOnClickListener {
+                    if (state.lockProfileSwitching && state.selectedProfileId != null && state.selectedProfileId != profile.id) {
+                        requestSwitchPin(profile.id)
+                    } else {
+                        selectProfile(profile.id)
+                    }
+                }
+            }
+            addBlock(root, choice, 10)
+        }
+        parentButton()
+    }
+
+    private fun showSessionEnded(state: KidsState) {
+        heading(getString(R.string.kids_profile_heading), getString(R.string.kids_profile_caption))
+        emptyCard(getString(R.string.kids_session_ended), R.id.kids_session_ended)
         button(getString(R.string.kids_switch_profile)) { chooseProfile(state) }
         parentButton()
-        if (profile.remainingMillis <= 0) {
-            label(getString(R.string.kids_session_ended)).id = R.id.kids_session_ended
-            return
+    }
+
+    private fun showHome(state: KidsState, profile: ChildProfile) {
+        val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(
+            Category.ALL to R.string.kids_category_all,
+            Category.VIDEOS to R.string.kids_category_videos,
+            Category.PLAYLISTS to R.string.kids_category_playlists,
+            Category.CHANNELS to R.string.kids_category_channels
+        ).forEach { (value, title) ->
+            val chip = KidsUi.button(this, getString(title), if (category == value) KidsUi.ButtonStyle.SELECTED else KidsUi.ButtonStyle.SURFACE).apply {
+                gravity = Gravity.CENTER
+                isSelected = category == value
+                minimumHeight = dp(if (isLandscape()) 38 else 44)
+                setOnClickListener {
+                    category = value
+                    display(displayedState ?: state)
+                }
+            }
+            chips.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(if (isLandscape()) 38 else 44)).apply { marginEnd = dp(8) })
         }
-        button(getString(R.string.kids_autoplay_status, getString(if (profile.autoplay) R.string.kids_on else R.string.kids_off))) {
-            updateProfile(profile.id, { it.copy(autoplay = !it.autoplay) })
+        val scroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
         }
-        button(getString(if (favoritesOnly) R.string.kids_show_all else R.string.kids_show_favorites)) {
-            favoritesOnly = !favoritesOnly
-            display(displayedState ?: state)
-        }
-        val input = EditText(this).apply {
-            hint = getString(R.string.kids_child_search)
-            id = R.id.kids_child_search
-            setText(searchText)
-        }
-        root.addView(input)
+        addBlock(root, scroll, 2)
         val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(results)
+        addBlock(root, results, 8)
+        renderLibrary(state, profile, results, "", category, favorites = false)
+    }
+
+    private fun showSearch(state: KidsState, profile: ChildProfile, favorites: Boolean) {
+        heading(
+            getString(if (favorites) R.string.kids_stuff_heading else R.string.kids_search_heading),
+            getString(if (favorites) R.string.kids_stuff_caption else R.string.kids_search_caption)
+        )
+        val input = EditText(this).apply {
+            id = R.id.kids_child_search
+            hint = getString(R.string.kids_child_search)
+            setSingleLine(true)
+            setText(searchText)
+            KidsUi.input(this)
+        }
+        addBlock(root, input, 18)
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        addBlock(root, results, 10)
         var shown = RESULT_PAGE_SIZE
-        fun showResults(query: String) {
-            results.removeAllViews()
-            val videos = ChildLibrary.videos(state, profile.id, query).filter { !favoritesOnly || it.id in profile.favorites }
-            val queryText = query.trim().lowercase(Locale.ROOT)
-            val sources = if (favoritesOnly) {
-                emptyList()
-            } else {
-                profile.sources.filter { source ->
-                    val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
-                    val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
-                    source.enabled && title.lowercase(Locale.ROOT).contains(queryText)
-                }
-            }
-            sources.forEach { source ->
-                val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
-                val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
-                val label = if (source.kind == SourceKind.PLAYLIST) R.string.kids_playlist_label else R.string.kids_channel_label
-                results.addView(
-                    Button(this).apply {
-                        text = getString(label, title)
-                        setOnClickListener { showSource(state, profile, source) }
-                    }
-                )
-            }
-            if (videos.isEmpty() && sources.isEmpty()) {
-                results.addView(TextView(this).apply { text = getString(R.string.kids_no_videos) })
-            }
-            videos.take(shown).forEach { item ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                val image = ImageView(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(96), dp(54))
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    contentDescription = null
-                }
-                CoilHelper.loadThumbnail(image, item.thumbnailUrl)
-                row.addView(image)
-                row.addView(
-                    Button(this).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        text = item.title
-                        tag = "kids-video-${item.id.id}"
-                        setOnClickListener { openVideo(item) }
-                    }
-                )
-                results.addView(row)
-            }
-            if (shown < videos.size) {
-                results.addView(
-                    Button(this).apply {
-                        text = getString(R.string.kids_parent_more)
-                        setOnClickListener {
-                            shown += RESULT_PAGE_SIZE
-                            showResults(query)
-                        }
-                    }
-                )
+        fun update(query: String) {
+            renderLibrary(state, profile, results, query, Category.ALL, favorites, shown) { next ->
+                shown = next
+                update(query)
             }
         }
         input.addTextChangedListener(object : TextWatcher {
@@ -265,12 +442,216 @@ class KidsChildActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 searchText = s?.toString().orEmpty()
                 shown = RESULT_PAGE_SIZE
-                showResults(searchText)
+                update(searchText)
             }
             override fun afterTextChanged(s: Editable?) = Unit
         })
-        showResults(searchText)
-        consumeIncomingVideo(state)
+        update(searchText)
+    }
+
+    private fun showChildProfile(state: KidsState, profile: ChildProfile) {
+        heading(getString(R.string.kids_profile_heading), getString(R.string.kids_profile_caption))
+        val name = profile.name.trim()
+        val initial = if (name.isEmpty()) "?" else name.substring(0, name.offsetByCodePoints(0, 1)).uppercase(Locale.ROOT)
+        val avatar = KidsUi.text(this, initial, 34f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            background = KidsUi.shape(this@KidsChildActivity, KidsUi.profileColor(profile.id), 100)
+            contentDescription = profile.name
+        }
+        root.addView(
+            avatar,
+            LinearLayout.LayoutParams(dp(80), dp(80)).apply {
+                topMargin = dp(22)
+                bottomMargin = dp(12)
+            }
+        )
+        addBlock(root, KidsUi.text(this, profile.name, 23f, KidsUi.ink, true), 0)
+        button(getString(R.string.kids_switch_profile)) { chooseProfile(state) }
+        button(autoplayText(profile.autoplay)) { updateProfile(profile.id, { it.copy(autoplay = !it.autoplay) }) }
+        parentButton()
+    }
+
+    private fun renderLibrary(
+        state: KidsState,
+        profile: ChildProfile,
+        target: LinearLayout,
+        query: String,
+        filter: Category,
+        favorites: Boolean,
+        shown: Int = RESULT_PAGE_SIZE,
+        onMore: ((Int) -> Unit)? = null
+    ) {
+        target.removeAllViews()
+        val queryText = query.trim().lowercase(Locale.ROOT)
+        val sources = if (favorites || filter == Category.VIDEOS) {
+            emptyList()
+        } else {
+            profile.sources.filter { source ->
+                val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
+                val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
+                val kindMatches = filter == Category.ALL || (filter == Category.PLAYLISTS && source.kind == SourceKind.PLAYLIST) ||
+                    (filter == Category.CHANNELS && source.kind == SourceKind.CHANNEL)
+                source.enabled && kindMatches && title.lowercase(Locale.ROOT).contains(queryText)
+            }
+        }
+        val videos = if (filter == Category.PLAYLISTS || filter == Category.CHANNELS) {
+            emptyList()
+        } else {
+            ChildLibrary.videos(state, profile.id, query).filter { !favorites || it.id in profile.favorites }
+        }
+        val featuredCount = if (activeTab == Tab.HOME && filter == Category.ALL && sources.isNotEmpty()) {
+            minOf(videos.size, if (isLandscape() && resources.configuration.screenWidthDp >= 600) 2 else 1)
+        } else {
+            0
+        }
+        val videosHeading = when {
+            favorites -> getString(R.string.kids_show_favorites)
+            activeTab == Tab.SEARCH -> getString(R.string.kids_category_videos)
+            else -> getString(R.string.kids_videos_heading)
+        }
+        if (featuredCount > 0) {
+            if (!isLandscape()) section(target, videosHeading)
+            addVideoGrid(target, videos.take(featuredCount)) { item -> openVideo(item) }
+        }
+        if (sources.isNotEmpty()) {
+            section(target, getString(R.string.kids_collections_heading))
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            sources.forEach { source ->
+                val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
+                val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
+                val label = if (source.kind == SourceKind.PLAYLIST) R.string.kids_playlist_label else R.string.kids_channel_label
+                val tile = KidsUi.button(this, getString(label, title)).apply {
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    KidsUi.icon(this, if (source.kind == SourceKind.PLAYLIST) R.drawable.ic_playlist_play else R.drawable.ic_person, KidsUi.purple)
+                    setOnClickListener { showSource(state, profile, source) }
+                }
+                row.addView(tile, LinearLayout.LayoutParams(dp(190), dp(70)).apply { marginEnd = dp(10) })
+            }
+            val collections = HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(row)
+            }
+            addBlock(target, collections, 10)
+        }
+        if (videos.isNotEmpty()) {
+            if (featuredCount == 0 && !isLandscape()) section(target, videosHeading)
+            addVideoGrid(target, videos.take(shown).drop(featuredCount)) { item -> openVideo(item) }
+            if (shown < videos.size) {
+                val more = KidsUi.button(this, getString(R.string.kids_parent_more), KidsUi.ButtonStyle.SOFT).apply {
+                    gravity = Gravity.CENTER
+                    setOnClickListener {
+                        if (onMore != null) onMore(shown + RESULT_PAGE_SIZE) else renderLibrary(state, profile, target, query, filter, favorites, shown + RESULT_PAGE_SIZE)
+                    }
+                }
+                addBlock(target, more, 12)
+            }
+        }
+        if (sources.isEmpty() && videos.isEmpty()) {
+            val message = when {
+                favorites && query.isBlank() -> R.string.kids_favorites_empty
+                query.isNotBlank() -> R.string.kids_no_matches
+                query.isBlank() && filter == Category.ALL -> R.string.kids_home_empty
+                else -> R.string.kids_no_videos
+            }
+            addEmptyCard(target, getString(message))
+        }
+    }
+
+    private fun addVideoGrid(target: LinearLayout, videos: List<ParentSearchItem>, action: (ParentSearchItem) -> Unit) {
+        val columns = if (resources.configuration.screenWidthDp >= 600) 2 else 1
+        val available = resources.configuration.screenWidthDp - 32 - (columns - 1) * 12
+        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
+        val imageHeight = if (compact) 82 else (available / columns * 9 / 16).coerceIn(130, 250)
+        videos.chunked(columns).forEach { items ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            items.forEachIndexed { index, item ->
+                if (index > 0) row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
+                row.addView(videoCard(item, imageHeight) { action(item) }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            }
+            if (items.size < columns) {
+                row.addView(Space(this), LinearLayout.LayoutParams(dp(12), 1))
+                row.addView(Space(this), LinearLayout.LayoutParams(0, 1, 1f))
+            }
+            addBlock(target, row, 12)
+        }
+    }
+
+    private fun videoCard(item: ParentSearchItem, imageHeight: Int, action: () -> Unit): View {
+        val compact = isLandscape() && resources.configuration.screenHeightDp < 420
+        val card = LinearLayout(this).apply {
+            orientation = if (compact) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = KidsUi.shape(this@KidsChildActivity, Color.WHITE, 18, KidsUi.border)
+            clipToOutline = true
+            elevation = dp(2).toFloat()
+        }
+        val thumbnail = FrameLayout(this).apply {
+            tag = "kids-thumbnail-${item.id.id}"
+            setBackgroundColor(KidsUi.purpleLight)
+            setOnClickListener { action() }
+            contentDescription = getString(R.string.kids_watch_description, item.title)
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        thumbnail.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        CoilHelper.loadThumbnail(image, item.thumbnailUrl)
+        val service = runCatching { VideoIdentity.service(item.id.serviceId).serviceInfo.name }.getOrDefault("")
+        if (service.isNotBlank()) {
+            val badge = KidsUi.text(this, service, 10f, Color.WHITE, true).apply {
+                setPadding(dp(7), dp(4), dp(7), dp(4))
+                background = KidsUi.shape(this@KidsChildActivity, 0xCC20232D.toInt(), 8)
+            }
+            thumbnail.addView(
+                badge,
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END).apply {
+                    setMargins(dp(8), dp(8), dp(8), dp(8))
+                }
+            )
+        }
+        val thumbnailWidth = if (compact) dp(imageHeight * 16 / 9) else ViewGroup.LayoutParams.MATCH_PARENT
+        card.addView(thumbnail, LinearLayout.LayoutParams(thumbnailWidth, dp(imageHeight)))
+        val title = KidsUi.button(this, item.title, KidsUi.ButtonStyle.GHOST).apply {
+            tag = "kids-video-${item.id.id}"
+            textSize = 15f
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+            minimumHeight = dp(60)
+            setOnClickListener { action() }
+        }
+        val titleLayout = if (compact) {
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        } else {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        card.addView(title, titleLayout)
+        return card
+    }
+
+    private fun heading(title: String, caption: String) {
+        addBlock(root, KidsUi.text(this, title, 25f, KidsUi.ink, true), 14)
+        addBlock(root, KidsUi.text(this, caption, 14f, KidsUi.muted), 7)
+    }
+
+    private fun section(target: LinearLayout, title: String) {
+        addBlock(target, KidsUi.text(this, title, 16f, KidsUi.ink, true), 18)
+    }
+
+    private fun emptyCard(message: String, viewId: Int = View.NO_ID) = addEmptyCard(root, message, viewId)
+
+    private fun addEmptyCard(target: LinearLayout, message: String, viewId: Int = View.NO_ID) {
+        val card = KidsUi.text(this, message, 15f, KidsUi.muted).apply {
+            id = viewId
+            setPadding(dp(18), dp(22), dp(18), dp(22))
+            background = KidsUi.shape(this@KidsChildActivity, Color.WHITE, 18, KidsUi.border)
+        }
+        addBlock(target, card, 16)
+    }
+
+    private fun addBlock(target: LinearLayout, view: View, top: Int) {
+        target.addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(top) })
     }
 
     private fun readIncomingIntent(intent: Intent?) {
@@ -302,24 +683,29 @@ class KidsChildActivity : AppCompatActivity() {
         startVideo(profileId, item.id, null, emptySet(), automatic = false)
     }
 
-    private fun showSource(state: KidsState, profile: ChildProfile, source: StoredSource, shown: Int = RESULT_PAGE_SIZE) {
+    private fun showSource(state: KidsState, profile: ChildProfile, source: StoredSource, shown: Int = RESULT_PAGE_SIZE, resetScroll: Boolean = true) {
         screen = Screen.SOURCE
         openSource = source.kind to source.id
         renderedHomeState = state
         root.removeAllViews()
-        timeLabel = label("")
-        showRemaining(profile.remainingMillis)
-        button(getString(R.string.kids_back_to_library)) { display(state) }
+        if (resetScroll) contentScroll.scrollTo(0, 0)
+        renderHeader(profile)
+        renderNavigation()
+        button(getString(R.string.kids_back_to_library)) {
+            contentScroll.scrollTo(0, 0)
+            display(displayedState ?: state)
+        }
         val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
-        label(state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id)
+        val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
+        heading(title, getString(if (source.kind == SourceKind.PLAYLIST) R.string.kids_category_playlists else R.string.kids_category_channels))
         val library = profile.approvedLibrary()
         val videos = source.videos.filter { library.canPlay(it.toContentId()) }
-        if (videos.isEmpty()) label(getString(R.string.kids_no_videos))
-        videos.take(shown).forEach { id ->
-            val item = state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == id }
-            if (item != null) button(item.title) { startVideo(profile.id, id, source.id.takeIf { source.kind == SourceKind.PLAYLIST }, emptySet(), automatic = false) }
+        val items = videos.take(shown).mapNotNull { id -> state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == id } }
+        if (items.isEmpty()) emptyCard(getString(R.string.kids_no_videos))
+        addVideoGrid(root, items) { item ->
+            startVideo(profile.id, item.id, source.id.takeIf { source.kind == SourceKind.PLAYLIST }, emptySet(), automatic = false)
         }
-        if (videos.size > shown) button(getString(R.string.kids_parent_more)) { showSource(state, profile, source, shown + RESULT_PAGE_SIZE) }
+        if (videos.size > shown) button(getString(R.string.kids_parent_more)) { showSource(state, profile, source, shown + RESULT_PAGE_SIZE, resetScroll = false) }
     }
 
     /** Extraction happens off the UI thread, with an approval check both before and after it. */
@@ -328,9 +714,11 @@ class KidsChildActivity : AppCompatActivity() {
         screen = Screen.LOADING
         val ticket = ++playbackGeneration
         root.removeAllViews()
-        timeLabel = label("")
-        displayedState?.profiles?.firstOrNull { it.id == profileId }?.let { showRemaining(it.remainingMillis) }
-        label(getString(R.string.kids_loading_video))
+        contentScroll.scrollTo(0, 0)
+        renderHeader(displayedState?.profiles?.firstOrNull { it.id == profileId })
+        navigation.visibility = View.GONE
+        heading(getString(R.string.kids_loading_video), getString(R.string.kids_loading_caption))
+        addBlock(root, android.widget.ProgressBar(this), 24)
         button(getString(R.string.kids_back_to_library)) { returnToLibrary() }
         worker.execute {
             val permitted = runCatching { ChildPlaybackAccess.allowed(storage.read(), profileId, video) }.getOrDefault(false)
@@ -387,16 +775,19 @@ class KidsChildActivity : AppCompatActivity() {
             }
         })
         root.removeAllViews()
-        timeLabel = label("")
-        showRemaining(profile.remainingMillis)
-        label(state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == video }?.title ?: video.id)
-        root.addView(
-            PlayerView(this).apply {
-                id = R.id.kids_player_view
-                this.player = player
-                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(230))
-            }
-        )
+        renderHeader(profile)
+        navigation.visibility = View.GONE
+        button(getString(R.string.kids_back_to_library)) { returnToLibrary() }
+        val availableWidth = (resources.configuration.screenWidthDp - 32).coerceAtLeast(240)
+        val playerHeight = minOf(availableWidth * 9 / 16, (resources.configuration.screenHeightDp * 0.55f).toInt()).coerceAtLeast(150)
+        val view = PlayerView(this).apply {
+            id = R.id.kids_player_view
+            this.player = player
+            background = KidsUi.shape(this@KidsChildActivity, KidsUi.ink, 18)
+            clipToOutline = true
+        }
+        root.addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(playerHeight)).apply { topMargin = dp(14) })
+        addBlock(root, KidsUi.text(this, state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == video }?.title ?: video.id, 20f, KidsUi.ink, true), 18)
         val autoplay = button(autoplayText(profile.autoplay)) { }
         autoplay.setOnClickListener {
             updateProfile(profileId, { it.copy(autoplay = !it.autoplay) }) { updated ->
@@ -421,7 +812,6 @@ class KidsChildActivity : AppCompatActivity() {
                 findNext(profileId, video, playlist, unavailable, manual = true)
             }
         }
-        button(getString(R.string.kids_back_to_library)) { returnToLibrary() }
         player.setMediaSource(ExtractorVideoResolver.mediaSource(this, resolved))
         player.prepare()
         player.play()
@@ -504,7 +894,9 @@ class KidsChildActivity : AppCompatActivity() {
     private fun showUnavailableScreen() {
         screen = Screen.MESSAGE
         root.removeAllViews()
-        label(getString(R.string.kids_video_unavailable))
+        renderHeader(displayedState?.profiles?.firstOrNull { it.id == displayedState?.selectedProfileId })
+        navigation.visibility = View.GONE
+        emptyCard(getString(R.string.kids_video_unavailable))
         button(getString(R.string.kids_back_to_library)) { returnToLibrary() }
     }
 
@@ -587,7 +979,8 @@ class KidsChildActivity : AppCompatActivity() {
                 result.fold(onSuccess = {
                     if (displayedState?.selectedProfileId != id) {
                         searchText = ""
-                        favoritesOnly = false
+                        activeTab = Tab.HOME
+                        category = Category.ALL
                     }
                     display(it)
                 }, onFailure = {
@@ -657,7 +1050,7 @@ class KidsChildActivity : AppCompatActivity() {
                         ) {
                             val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId && it.enabled }
                             val source = profile?.sources?.firstOrNull { (it.kind to it.id) == openSource && it.enabled }
-                            if (profile == null || source == null || profile.remainingMillis <= 0) display(state) else showSource(state, profile, source)
+                            if (profile == null || source == null || profile.remainingMillis <= 0) display(state) else showSource(state, profile, source, resetScroll = false)
                         }
                     }
                     scheduleSources(ticket, SOURCE_REFRESH_MILLIS)
@@ -681,7 +1074,9 @@ class KidsChildActivity : AppCompatActivity() {
     private fun showStorageError() {
         stopPlayback()
         root.removeAllViews()
-        label(getString(R.string.kids_storage_error))
+        renderHeader(null)
+        navigation.visibility = View.GONE
+        emptyCard(getString(R.string.kids_storage_error))
         button(getString(R.string.kids_try_again)) { loadState() }
     }
 
@@ -689,16 +1084,16 @@ class KidsChildActivity : AppCompatActivity() {
         startActivity(Intent(this, KidsParentActivity::class.java))
     }
 
-    private fun label(text: String): TextView = TextView(this).also {
-        it.text = text
-        root.addView(it)
+    private fun label(text: String): TextView = KidsUi.text(this, text, 16f, KidsUi.ink).also {
+        addBlock(root, it, 12)
     }
 
-    private fun button(text: String, action: () -> Unit): Button = Button(this).also {
-        it.text = text
+    private fun button(text: String, action: () -> Unit): Button = KidsUi.button(this, text).also {
         it.setOnClickListener { if (!busy) action() }
-        root.addView(it)
+        addBlock(root, it, 10)
     }
+
+    private fun isLandscape(): Boolean = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 

@@ -9,4 +9,10 @@
     <item name="kids_session_ended" type="id" />
     <item name="kids_child_search" type="id" />
     <item name="kids_player_view" type="id" />
+    <item name="kids_nav_home" type="id" />
+    <item name="kids_nav_search" type="id" />
+    <item name="kids_nav_stuff" type="id" />
+    <item name="kids_nav_profile" type="id" />
+    <item name="kids_parent_entry" type="id" />
+    <item name="kids_content_scroll" type="id" />
 </resources>

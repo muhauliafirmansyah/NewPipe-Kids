@@ -9,6 +9,7 @@ import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.search.SearchInfo
+import org.schabi.newpipe.util.image.ImageStrategy
 
 @Serializable
 enum class ParentContentKind { VIDEO, CHANNEL, PLAYLIST }
@@ -80,7 +81,7 @@ object ParentContentSearch {
 
                 else -> return null
             }
-            ParentSearchItem(kind, id, item.name, url, item.thumbnails.firstOrNull()?.url)
+            ParentSearchItem(kind, id, item.name, url, ImageStrategy.imageListToDbUrl(item.thumbnails))
         } catch (_: Exception) {
             null
         }
