@@ -21,6 +21,13 @@ data class StoredContentId(val serviceId: Int, val id: String) {
     fun toContentId(): ContentId = ContentId(serviceId, id)
 }
 
+/** A channel playlist is a browsing aid, not an independent video approval. */
+@Serializable
+data class StoredChannelPlaylist(
+    val id: StoredContentId,
+    val videos: List<StoredContentId> = emptyList()
+)
+
 @Serializable
 data class StoredSource(
     val kind: SourceKind,
@@ -28,7 +35,9 @@ data class StoredSource(
     val enabled: Boolean = true,
     // Replaced only after a complete successful refresh; order preserves playlist order.
     val videos: List<StoredContentId> = emptyList(),
-    val activeRefreshToken: String? = null
+    val activeRefreshToken: String? = null,
+    val channelPlaylists: List<StoredChannelPlaylist> = emptyList(),
+    val activePlaylistRefreshToken: String? = null
 )
 
 @Serializable
@@ -66,7 +75,9 @@ data class ChildProfile(
     val history: List<StoredWatch> = emptyList(),
     val autoplay: Boolean = true,
     val sessionRevision: Long = 0,
-    val avatarId: String = "initial"
+    val avatarId: String = "initial",
+    val hiddenChannelPlaylists: Set<StoredContentId> = emptySet(),
+    val showShorts: Boolean = true
 ) {
     init {
         require(id.isNotBlank() && name.isNotBlank())

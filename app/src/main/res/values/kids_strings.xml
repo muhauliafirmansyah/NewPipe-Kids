@@ -45,7 +45,12 @@
     <string name="kids_parent_select_profiles">Choose child profiles</string>
     <string name="kids_parent_select_required">Select at least one profile.</string>
     <string name="kids_parent_future_content">Future uploads or additions will also be approved.</string>
-    <string name="kids_parent_peertube_account_scope">This PeerTube account may include videos from multiple channels, including future uploads.</string>
+    <string name="kids_parent_hide_shorts">Hide Shorts</string>
+    <string name="kids_parent_show_shorts">Show Shorts</string>
+    <string name="kids_parent_shorts_caption">Shorts can be hidden per child. Identification depends on information from the video service, so some Shorts may not be recognized.</string>
+    <string name="kids_parent_channel_scope">Future uploads will also be approved. The channel’s playlists will show only its own approved videos; approving a playlist directly includes all its videos.</string>
+    <string name="kids_parent_channel_playlist_scope">Only videos from the approved channel are included. Approve this playlist separately to include all its videos.</string>
+    <string name="kids_parent_peertube_account_scope">This PeerTube account may include videos from multiple channels, including future uploads. Its playlists show only videos from the approved account; approving a playlist directly includes all its videos.</string>
     <string name="kids_parent_hidden">Hidden</string>
     <string name="kids_parent_hide">Hide</string>
     <string name="kids_parent_show">Show</string>

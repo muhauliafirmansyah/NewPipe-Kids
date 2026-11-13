@@ -56,6 +56,17 @@ class KidsPlaybackTest {
         assertNull(KidsPlayback.nextAfter(extra, playlist, b, listOf(c), emptySet(), manual = true))
     }
 
+    @Test fun `inherited playlist playback skips other channels even if separately approved`() {
+        val id = StoredContentId(0, "playlist")
+        val channel = StoredSource(SourceKind.CHANNEL, StoredContentId(0, "channel"), videos = listOf(a, b), channelPlaylists = listOf(StoredChannelPlaylist(id, listOf(a, c, b))))
+        val child = profile.copy(approvedVideos = setOf(c), sources = listOf(channel))
+        val inherited = ChildLibrary.sources(child).single { it.id == id }
+        assertEquals(NextPlayback(b, id), KidsPlayback.nextAfter(child, inherited, a, listOf(c), emptySet(), manual = false))
+        val direct = StoredSource(SourceKind.PLAYLIST, id, videos = listOf(a, c, b))
+        val withDirect = child.copy(sources = listOf(channel, direct))
+        assertEquals(NextPlayback(c, id), KidsPlayback.nextAfter(withDirect, ChildLibrary.sources(withDirect).single { it.id == id }, a, listOf(c), emptySet(), manual = true))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `cannot record watch progress for unapproved content`() {
         KidsPlayback.recordPlaybackInterval(profile, c, 0, 90, 100, 10)

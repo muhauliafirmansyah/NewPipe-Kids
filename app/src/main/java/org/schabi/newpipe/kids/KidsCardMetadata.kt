@@ -12,7 +12,8 @@ internal object KidsCardMetadata {
     fun playlistPreview(
         source: StoredSource,
         library: ApprovedLibrary,
-        catalog: Map<StoredContentId, ParentSearchItem>
+        catalog: Map<StoredContentId, ParentSearchItem>,
+        blockedShorts: Set<StoredContentId> = emptySet()
     ): PlaylistCardPreview {
         if (source.kind != SourceKind.PLAYLIST || !source.enabled || source.videos.isEmpty()) {
             return PlaylistCardPreview(null, null)
@@ -21,7 +22,7 @@ internal object KidsCardMetadata {
         var thumbnail: String? = null
         source.videos.forEach { id ->
             val item = catalog[id]
-            if (item != null && library.canPlay(id.toContentId())) {
+            if (item != null && VideoIdentity.canonicalize(id) !in blockedShorts && library.canPlay(id.toContentId())) {
                 count++
                 if (thumbnail == null) thumbnail = item.thumbnailUrl
             }

@@ -10,9 +10,16 @@ Children can browse and search independently within their approved library.
 - Parents explicitly approve content for each child. Age-based labels and
   automated curation do not determine what is available.
 - Parents can approve individual videos, channels, and playlists.
-- Approving a channel automatically includes new uploads.
-- Approving a playlist automatically approves its videos, including videos
-  added later.
+- Approving a channel automatically includes new uploads. Its playlists also
+  appear in the child library, but only videos from that channel are shown in
+  those inherited playlists. Explicit video hides still apply, and parents can
+  hide or restore an inherited playlist without approving its other videos.
+- Approving a playlist directly automatically approves its videos, including
+  videos from other channels and videos added later. If a playlist is both
+  inherited from a channel and approved directly, the direct approval applies.
+- Combined video and playlist lists show each item once, even when several
+  approvals cover it. Disabling a directly approved playlist also hides its
+  inherited card until it is re-enabled or its direct approval is removed.
 - Removing a playlist or a video from it removes the resulting approval, but
   the video remains available if another approval still covers it.
 - Refresh approved channels and playlists when the app opens and periodically
@@ -22,6 +29,9 @@ Children can browse and search independently within their approved library.
 - An explicitly hidden video stays unavailable even if an approved channel
   or playlist also includes it.
 - The parent interface clearly explains the scope of each approval.
+- Parents can show or hide Shorts separately for each profile. Shorts are
+  shown by default; the filter uses labels provided by the video service, so
+  an unlabelled Short may not be recognized.
 
 ## Child profiles
 

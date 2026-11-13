@@ -26,13 +26,7 @@ class SourceRefreshCoordinator(private val storage: KidsStorage, private val fet
         }
         return storage.update { current ->
             val updated = ApprovalManager.completeSourceRefresh(current, ticket, videos.map { it.id })
-            val metadata = videos.distinctBy { it.id }
-            val refreshedIds = metadata.mapTo(mutableSetOf()) { it.id }
-            updated.copy(
-                catalog = updated.catalog.filterNot { old ->
-                    old.kind == ParentContentKind.VIDEO && old.id in refreshedIds
-                } + metadata
-            )
+            updated.copy(catalog = KidsCatalog.merge(updated.catalog, videos))
         }
     }
 }

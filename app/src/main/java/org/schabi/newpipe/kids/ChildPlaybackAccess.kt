@@ -9,6 +9,6 @@ object ChildPlaybackAccess {
         if (state.selectedProfileId != profileId) return false
         val profile = state.profiles.firstOrNull { it.id == profileId && it.enabled } ?: return false
         if (profile.remainingMillis <= 0) return false
-        return profile.approvedLibrary().canPlay(video.toContentId())
+        return ChildLibrary.canPlay(state, profile, video)
     }
 }

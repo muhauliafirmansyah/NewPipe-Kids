@@ -36,9 +36,20 @@ class KidsStorageTest {
         assertTrue(restored.profiles[1].approvedLibrary().canPlay(video.toContentId()))
     }
 
+    @Test fun `channel playlist snapshots survive storage and old sources load without them`() {
+        val video = VideoIdentity.youtube("e_04ZrNroTo")
+        val playlist = StoredChannelPlaylist(StoredContentId(0, "list"), listOf(video))
+        val source = StoredSource(SourceKind.CHANNEL, StoredContentId(0, "channel"), videos = listOf(video), channelPlaylists = listOf(playlist))
+        val state = KidsState(profiles = listOf(ChildProfile("a", "A", sessionLimitMinutes = 1, remainingMillis = 1, sources = listOf(source), hiddenChannelPlaylists = setOf(playlist.id), showShorts = false)))
+        assertEquals(state, KidsStateCodec.decode(KidsStateCodec.encode(state)))
+        val old = KidsStateCodec.decode("""{"profiles":[{"id":"a","name":"A","sessionLimitMinutes":1,"remainingMillis":1,"sources":[{"kind":"CHANNEL","id":{"serviceId":0,"id":"channel"}}]}]}""")
+        assertTrue(old.profiles.single().sources.single().channelPlaylists.isEmpty())
+    }
+
     @Test fun `older saved profiles without a picture use the initial`() {
         val state = KidsStateCodec.decode("""{"profiles":[{"id":"old","name":"Alex","sessionLimitMinutes":30,"remainingMillis":1000}]}""")
         assertEquals("initial", state.profiles.single().avatarId)
+        assertTrue(state.profiles.single().showShorts)
     }
 
     @Test fun `card metadata persists and older catalog entries remain readable`() {

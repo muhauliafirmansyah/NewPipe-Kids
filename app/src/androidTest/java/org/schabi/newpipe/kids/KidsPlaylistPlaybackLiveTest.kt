@@ -86,6 +86,99 @@ class KidsPlaylistPlaybackLiveTest {
         }
     }
 
+    @Test fun inheritedChannelPlaylistSkipsOtherChannelsDuringAutoplay() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("live") == "true")
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "child", "Test child", 2)
+            val first = item("e_04ZrNroTo", "First song")
+            val outsider = item("jNQXAC9IVRw", "Other channel")
+            val second = item("dQw4w9WgXcQ", "Second song")
+            parent.approveSearchItem("1234", setOf("child"), outsider)
+            val playlist = StoredContentId(0, "inherited-player-playlist")
+            val channel = StoredSource(SourceKind.CHANNEL, StoredContentId(0, "inherited-player-channel"), videos = listOf(first.id, second.id), channelPlaylists = listOf(StoredChannelPlaylist(playlist, listOf(first.id, outsider.id, second.id))))
+            storage.update { state ->
+                state.copy(selectedProfileId = "child", profiles = state.profiles.map { it.copy(sources = listOf(channel)) }, catalog = state.catalog + listOf(first, second, ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Channel playlist", "https://example.org/playlist")))
+            }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { findButton(it.window.decorView, "Channel playlist") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Channel playlist")).performClick() }
+                scenario.onActivity { activity -> requireNotNull(activity.window.decorView.findViewWithTag<View>("kids-thumbnail-e_04ZrNroTo")).performClick() }
+                waitForPlaying(scenario, "First song")
+                seekToEnd(scenario)
+                waitForPlaying(scenario, "Second song")
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun playlistAutoplaySkipsShortsWhenParentHidesThem() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("live") == "true")
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "child", "Test child", 2)
+            val first = item("e_04ZrNroTo", "First song")
+            val short = item("jNQXAC9IVRw", "Identified short").copy(isShortForm = true)
+            val next = item("dQw4w9WgXcQ", "Next song")
+            listOf(first, short, next).forEach { parent.approveSearchItem("1234", setOf("child"), it) }
+            parent.setShowShorts("1234", "child", false)
+            val playlist = StoredContentId(0, "shorts-player-playlist")
+            storage.update { state ->
+                val approved = ApprovalManager.approveSource(state, setOf("child"), SourceKind.PLAYLIST, playlist)
+                val started = ApprovalManager.beginSourceRefresh(approved, setOf("child"), SourceKind.PLAYLIST, playlist)
+                ApprovalManager.completeSourceRefresh(started.state, started.ticket, listOf(first.id, short.id, next.id)).copy(
+                    selectedProfileId = "child",
+                    catalog = state.catalog + ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Shorts test playlist", "https://example.org/playlist")
+                )
+            }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { findButton(it.window.decorView, "Shorts test playlist") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Shorts test playlist")).performClick() }
+                scenario.onActivity { activity ->
+                    assertTrue(findButton(activity.window.decorView, "Identified short") == null)
+                    requireNotNull(activity.window.decorView.findViewWithTag<View>("kids-thumbnail-e_04ZrNroTo")).performClick()
+                }
+                waitForPlaying(scenario, "First song")
+                seekToEnd(scenario)
+                waitForPlaying(scenario, "Next song")
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
+    @Test fun hidingShortsStopsAnIdentifiedShortAlreadyPlaying() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("live") == "true")
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            val parent = ParentSettings(storage)
+            parent.setup("1234", "child", "Test child", 2)
+            val short = item("e_04ZrNroTo", "Identified short").copy(isShortForm = true)
+            parent.approveSearchItem("1234", setOf("child"), short)
+            storage.update { it.copy(selectedProfileId = "child") }
+            ActivityScenario.launch(KidsChildActivity::class.java).use { scenario ->
+                waitFor(scenario) { findButton(it.window.decorView, "Identified short") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Identified short")).performClick() }
+                waitForPlaying(scenario, "Identified short")
+                parent.setShowShorts("1234", "child", false)
+                waitFor(scenario) { activity ->
+                    activity.findViewById<PlayerView>(R.id.kids_player_view) == null && findButton(activity.window.decorView, "Identified short") == null
+                }
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
     private fun item(id: String, title: String) = ParentSearchItem(ParentContentKind.VIDEO, VideoIdentity.youtube(id), title, "https://youtu.be/$id")
 
     private fun seekToEnd(scenario: ActivityScenario<KidsChildActivity>) {

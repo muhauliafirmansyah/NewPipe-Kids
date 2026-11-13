@@ -46,6 +46,7 @@ class KidsParentActivity : AppCompatActivity() {
     private var searchServiceId = ServiceList.YouTube.serviceId
     private var previewDialog: AlertDialog? = null
     private var previewPlayer: ExoPlayer? = null
+    private var approvedListMarker: View? = null
     private var foreground = false
     private var refreshGeneration = 0
 
@@ -99,7 +100,9 @@ class KidsParentActivity : AppCompatActivity() {
         refreshHandler.postDelayed({
             if (!foreground || generation != refreshGeneration) return@postDelayed
             sourceWorker.execute {
-                runCatching { ApprovedSourceRefresher(KidsStorage.get(applicationContext), ExtractorSourceFetcher()).refreshAll() }
+                runCatching {
+                    ApprovedSourceRefresher(KidsStorage.get(applicationContext), ExtractorSourceFetcher(), ExtractorChannelPlaylistFetcher(), ::onPlaylistsDiscovered).refreshAll()
+                }
                 runOnUiThread {
                     if (foreground && generation == refreshGeneration && !isFinishing && !isDestroyed) scheduleSourceRefresh(SOURCE_REFRESH_MILLIS, generation)
                 }
@@ -144,6 +147,7 @@ class KidsParentActivity : AppCompatActivity() {
     private fun showProfiles(state: KidsState) {
         root.removeAllViews()
         label(getString(R.string.kids_parent_profiles))
+        label(getString(R.string.kids_parent_shorts_caption))
         button(getString(R.string.kids_parent_back_approved)) { showApproved(state) }
         button(getString(R.string.kids_parent_add_profile)) { showAddProfile() }
         button(getString(if (state.lockProfileSwitching) R.string.kids_parent_unlock_switch else R.string.kids_parent_lock_switch)) {
@@ -158,7 +162,7 @@ class KidsParentActivity : AppCompatActivity() {
 
     private fun showApproved(state: KidsState) {
         root.removeAllViews()
-        label(getString(R.string.kids_parent_approved))
+        approvedListMarker = label(getString(R.string.kids_parent_approved))
         label(getString(R.string.kids_parent_caption))
         button(getString(R.string.kids_parent_profiles)) { showProfiles(state) }
         button(getString(R.string.kids_parent_add_content)) { showSearch() }
@@ -200,6 +204,16 @@ class KidsParentActivity : AppCompatActivity() {
                 showApprovedSource(profile, source, title)
             }
         }
+        ChildLibrary.sources(profile, includeHiddenChannelPlaylists = true).filter { source ->
+            source.kind == SourceKind.PLAYLIST && profile.sources.none { it.kind == source.kind && it.id == source.id }
+        }.forEach { source ->
+            val item = state.catalog.firstOrNull { it.kind == ParentContentKind.PLAYLIST && it.id == source.id }
+            val title = item?.title ?: source.id.id
+            val hidden = source.id in profile.hiddenChannelPlaylists
+            contentButton(item, if (hidden) "$title (${getString(R.string.kids_parent_hidden)})" else title) {
+                showChannelPlaylist(profile, source, title, hidden)
+            }
+        }
     }
 
     private fun showApprovedVideo(profile: ChildProfile, id: StoredContentId, title: String, hidden: Boolean) {
@@ -225,14 +239,26 @@ class KidsParentActivity : AppCompatActivity() {
         }.show()
     }
 
+    private fun showChannelPlaylist(profile: ChildProfile, source: StoredSource, title: String, hidden: Boolean) {
+        val choices = arrayOf(getString(R.string.kids_parent_open), getString(if (hidden) R.string.kids_parent_show else R.string.kids_parent_hide))
+        AlertDialog.Builder(this).setTitle(title).setItems(choices) { _, index ->
+            when (index) {
+                0 -> showApprovedSourceVideos(profile, source, title)
+                1 -> changeApproved { service, pin -> service.setChannelPlaylistHidden(pin, setOf(profile.id), source.id, !hidden) }
+            }
+        }.show()
+    }
+
     private fun showApprovedSourceVideos(profile: ChildProfile, source: StoredSource, title: String, shown: Int = RESULT_PAGE_SIZE) {
         val state = KidsStorage.get(applicationContext).read()
         val latestProfile = state.profiles.firstOrNull { it.id == profile.id } ?: return showApproved(state)
-        val latestSource = latestProfile.sources.firstOrNull { it.kind == source.kind && it.id == source.id } ?: return showApproved(state)
+        val direct = latestProfile.sources.firstOrNull { it.kind == source.kind && it.id == source.id }
+        val latestSource = direct ?: ChildLibrary.sources(latestProfile, includeHiddenChannelPlaylists = true).firstOrNull { it.kind == source.kind && it.id == source.id }
+            ?: return showApproved(state)
         root.removeAllViews()
         button(getString(R.string.kids_parent_back_approved)) { loadApproved() }
         label(title)
-        label(sourceScope(latestSource.kind, latestSource.id))
+        label(if (direct == null) getString(R.string.kids_parent_channel_playlist_scope) else sourceScope(latestSource.kind, latestSource.id))
         if (latestSource.videos.isEmpty()) label(getString(R.string.kids_parent_source_empty))
         latestSource.videos.take(shown).forEach { id ->
             val videoTitle = state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == id }?.title ?: id.id
@@ -343,7 +369,13 @@ class KidsParentActivity : AppCompatActivity() {
     private fun sourceScope(kind: SourceKind, id: StoredContentId): String {
         val account = kind == SourceKind.CHANNEL && id.serviceId == ServiceList.PeerTube.serviceId &&
             runCatching { URI(id.id).path.startsWith("/accounts/") }.getOrDefault(false)
-        return getString(if (account) R.string.kids_parent_peertube_account_scope else R.string.kids_parent_future_content)
+        return getString(
+            when {
+                account -> R.string.kids_parent_peertube_account_scope
+                kind == SourceKind.CHANNEL -> R.string.kids_parent_channel_scope
+                else -> R.string.kids_parent_future_content
+            }
+        )
     }
 
     private fun browseSearchSource(item: ParentSearchItem) {
@@ -453,9 +485,20 @@ class KidsParentActivity : AppCompatActivity() {
             onError = ::showSaveError,
             onSuccess = { (state, refreshed) ->
                 showApproved(state)
+                if (item.kind == ParentContentKind.CHANNEL) {
+                    sourceWorker.execute {
+                        runCatching { ChannelPlaylistRefreshCoordinator(KidsStorage.get(applicationContext), ExtractorChannelPlaylistFetcher(), ::onPlaylistsDiscovered).refresh(ids, item.id) }
+                    }
+                }
                 if (!refreshed) AlertDialog.Builder(this).setMessage(R.string.kids_parent_refresh_error).setPositiveButton(android.R.string.ok, null).show()
             }
         )
+    }
+
+    private fun onPlaylistsDiscovered() {
+        runOnUiThread {
+            if (foreground && hasWindowFocus() && parentPin != null && !busy && !isFinishing && !isDestroyed && approvedListMarker?.parent === root) loadApproved()
+        }
     }
 
     private fun loadApproved() = runTask(
@@ -505,6 +548,7 @@ class KidsParentActivity : AppCompatActivity() {
             getString(if (profile.enabled) R.string.kids_parent_disable else R.string.kids_parent_enable),
             getString(R.string.kids_parent_set_limit),
             getString(R.string.kids_parent_reset_session),
+            getString(if (profile.showShorts) R.string.kids_parent_hide_shorts else R.string.kids_parent_show_shorts),
             getString(R.string.kids_parent_remove)
         )
         AlertDialog.Builder(this).setTitle(profile.name).setItems(actions) { _, index ->
@@ -517,7 +561,9 @@ class KidsParentActivity : AppCompatActivity() {
 
                 3 -> change { service, pin -> service.resetSession(pin, profile.id) }
 
-                4 -> AlertDialog.Builder(this).setMessage(R.string.kids_parent_remove_confirm)
+                4 -> change { service, pin -> service.setShowShorts(pin, profile.id, !profile.showShorts) }
+
+                5 -> AlertDialog.Builder(this).setMessage(R.string.kids_parent_remove_confirm)
                     .setNegativeButton(R.string.kids_parent_cancel, null)
                     .setPositiveButton(R.string.kids_parent_remove) { _, _ ->
                         change { service, pin -> service.removeProfile(pin, profile.id) }

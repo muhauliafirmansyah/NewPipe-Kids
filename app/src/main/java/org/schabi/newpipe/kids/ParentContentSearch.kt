@@ -24,7 +24,8 @@ data class ParentSearchItem(
     val url: String,
     val thumbnailUrl: String? = null,
     val durationSeconds: Long? = null,
-    val uploaderName: String? = null
+    val uploaderName: String? = null,
+    val isShortForm: Boolean = false
 ) {
     init {
         require(title.isNotBlank() && url.isNotBlank())
@@ -92,7 +93,12 @@ object ParentContentSearch {
                 url,
                 ImageStrategy.imageListToDbUrl(item.thumbnails),
                 durationSeconds = (item as? StreamInfoItem)?.duration?.takeIf { it > 0 },
-                uploaderName = (item as? PlaylistInfoItem)?.uploaderName?.takeIf { it.isNotBlank() }
+                uploaderName = (item as? PlaylistInfoItem)?.uploaderName?.takeIf { it.isNotBlank() },
+                isShortForm = (item as? StreamInfoItem)?.isShortFormContent == true ||
+                    (
+                        item.infoType == InfoItem.InfoType.STREAM && item.serviceId == ServiceList.YouTube.serviceId &&
+                            runCatching { java.net.URI(item.url).path.startsWith("/shorts/") }.getOrDefault(false)
+                        )
             )
         } catch (_: Exception) {
             null

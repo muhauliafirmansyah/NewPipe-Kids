@@ -53,6 +53,58 @@ class KidsParentActivityTest {
         }
     }
 
+    @Test fun parentCanHideChannelPlaylistWithoutApprovingItsOtherVideos() {
+        val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)
+        val original = storage.read()
+        assumeTrue(original.parentPin == null && original.profiles.isEmpty())
+        try {
+            ParentSettings(storage).setup("1234", "a", "Child", 10)
+            val own = VideoIdentity.youtube("e_04ZrNroTo")
+            val other = VideoIdentity.youtube("dQw4w9WgXcQ")
+            val playlist = StoredContentId(0, "parent-inherited-playlist")
+            val channel = StoredSource(SourceKind.CHANNEL, StoredContentId(0, "parent-inherited-channel"), videos = listOf(own), channelPlaylists = listOf(StoredChannelPlaylist(playlist, listOf(own, other))))
+            storage.update { state ->
+                state.copy(
+                    profiles = state.profiles.map { it.copy(sources = listOf(channel)) },
+                    catalog = listOf(
+                        ParentSearchItem(ParentContentKind.VIDEO, own, "Channel video", "https://youtu.be/${own.id}"),
+                        ParentSearchItem(ParentContentKind.VIDEO, other, "Other video", "https://youtu.be/${other.id}"),
+                        ParentSearchItem(ParentContentKind.PLAYLIST, playlist, "Channel playlist", "https://example.org/playlist")
+                    )
+                )
+            }
+            ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    it.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("1234")
+                    it.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
+                }
+                waitFor(scenario) { findButton(it.window.decorView, "Channel playlist") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Channel playlist")).performClick() }
+                clickDialogItem("Open")
+                waitFor(scenario) { hasText(it.window.decorView, it.getString(R.string.kids_parent_channel_playlist_scope)) }
+                scenario.onActivity { activity ->
+                    assertTrue(findButton(activity.window.decorView, "Channel video") != null)
+                    assertTrue(findButton(activity.window.decorView, "Other video") == null)
+                    requireNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_parent_back_approved))).performClick()
+                }
+                waitFor(scenario) { findButton(it.window.decorView, "Channel playlist") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Channel playlist")).performClick() }
+                clickDialogItem("Hide")
+                waitFor(scenario) { playlist in storage.read().profiles.single().hiddenChannelPlaylists }
+                val hidden = storage.read().profiles.single()
+                assertTrue(ChildLibrary.sources(hidden).none { it.id == playlist })
+                assertTrue(!hidden.approvedLibrary().canPlay(other.toContentId()))
+                waitFor(scenario) { findButton(it.window.decorView, "Channel playlist (Hidden)") != null }
+                scenario.onActivity { requireNotNull(findButton(it.window.decorView, "Channel playlist (Hidden)")).performClick() }
+                clickDialogItem("Show")
+                waitFor(scenario) { playlist !in storage.read().profiles.single().hiddenChannelPlaylists }
+                assertTrue(ChildLibrary.sources(storage.read().profiles.single()).any { it.id == playlist })
+            }
+        } finally {
+            storage.update { original }
+        }
+    }
+
     @Test fun parentCanPreviewAnApprovedVideo() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("live") == "true")
         val storage = KidsStorage.get(InstrumentationRegistry.getInstrumentation().targetContext)

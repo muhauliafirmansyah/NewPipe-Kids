@@ -19,8 +19,12 @@ flowchart TD
 ```
 
 When a parent approves a channel or playlist, the app explains that future
-uploads or additions will also be available. The parent can add more content
-and profiles later in Parent mode.
+uploads or additions will also be available. A channel's playlists appear
+in the child library with that channel's own approved videos. A directly
+approved playlist includes all its videos, including those from other channels.
+Parents can review, hide, and restore a channel's inherited playlists without
+approving other-channel videos. The parent can add more content and profiles
+later in Parent mode.
 
 ## Child: find and watch a video
 
@@ -48,11 +52,16 @@ flowchart TD
 - The child can turn autoplay on or off from the player or Profile tab.
 - Home presents approved channels, videos, and playlists together, with category filters.
   Cards keep the same layout in portrait and landscape and use more columns
-  when the screen is wider. Playlist cards count only videos visible to the active child. Search
-  matches only approved videos, channels, and playlists. Your stuff contains the
+  when the screen is wider. Videos and playlists appear once in combined lists,
+  even when covered by multiple approvals. Playlist cards count only videos
+  visible to the active child. Search matches only approved videos, channels,
+  and playlists. Your stuff contains the
   active profile's favorites. Profile opens a picture-based picker, where the
   active child can edit their nickname and choose a built-in picture, switch
   profiles, and adjust autoplay.
+- In Parent mode, each child's profile has a Show Shorts / Hide Shorts action.
+  Hiding applies to identified Shorts in browsing, search and playback. The
+  filter depends on service metadata and cannot identify every Short.
 - The parent-mode lock is available from the child screens. Hidden or disabled
   content stays out of child browsing, search, and favorites.
 - Outside a playlist, autoplay prefers unwatched approved videos. Once all

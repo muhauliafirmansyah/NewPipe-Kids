@@ -21,6 +21,8 @@ object ProfileManager {
 
     fun setEnabled(state: KidsState, id: String, enabled: Boolean): KidsState = change(state, id) { it.copy(enabled = enabled) }
 
+    fun setShowShorts(state: KidsState, id: String, show: Boolean): KidsState = change(state, id) { it.copy(showShorts = show) }
+
     fun remove(state: KidsState, id: String): KidsState {
         require(state.profiles.any { it.id == id }) { "Profile not found" }
         return state.copy(

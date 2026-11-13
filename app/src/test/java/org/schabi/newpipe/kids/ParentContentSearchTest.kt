@@ -32,6 +32,15 @@ class ParentContentSearchTest {
         assertEquals("Science channel", ParentContentSearch.toItem(playlist)?.uploaderName)
     }
 
+    @Test fun `shorts metadata and shorts URLs are retained for filtering`() {
+        val service = ServiceList.YouTube.serviceId
+        val flagged = StreamInfoItem(service, "https://youtu.be/e_04ZrNroTo", "Short", StreamType.VIDEO_STREAM)
+        flagged.isShortFormContent = true
+        assertEquals(true, ParentContentSearch.toItem(flagged)?.isShortForm)
+        val linked = StreamInfoItem(service, "https://youtube.com/shorts/e_04ZrNroTo", "Short link", StreamType.VIDEO_STREAM)
+        assertEquals(true, ParentContentSearch.toItem(linked)?.isShortForm)
+    }
+
     @Test fun `search stores an appropriately sized thumbnail for larger cards`() {
         val stream = StreamInfoItem(ServiceList.YouTube.serviceId, "https://youtu.be/e_04ZrNroTo", "Song", StreamType.VIDEO_STREAM)
         stream.thumbnails = listOf(

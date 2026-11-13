@@ -806,7 +806,7 @@ class KidsChildActivity : AppCompatActivity() {
         val sources = if (favorites || filter == Category.VIDEOS) {
             emptyList()
         } else {
-            profile.sources.filter { source ->
+            ChildLibrary.sources(profile).filter { source ->
                 val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
                 val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
                 val kindMatches = filter == Category.ALL || (filter == Category.PLAYLISTS && source.kind == SourceKind.PLAYLIST) ||
@@ -866,9 +866,10 @@ class KidsChildActivity : AppCompatActivity() {
     private fun addMixedGrid(target: LinearLayout, state: KidsState, profile: ChildProfile, cards: List<LibraryCard>) {
         val library = profile.approvedLibrary()
         val catalog = state.catalog.filter { it.kind == ParentContentKind.VIDEO }.associateBy { it.id }
+        val blockedShorts = ChildLibrary.hiddenShorts(state, profile)
         addCards(target, cards) { card, imageHeight ->
             when (card) {
-                is LibraryCard.Source -> sourceCard(state, profile, card.value, imageHeight, library, catalog)
+                is LibraryCard.Source -> sourceCard(state, profile, card.value, imageHeight, library, catalog, blockedShorts)
                 is LibraryCard.Video -> videoCard(card.value, imageHeight) { openVideo(card.value) }
             }
         }
@@ -877,7 +878,8 @@ class KidsChildActivity : AppCompatActivity() {
     private fun addSourceGrid(target: LinearLayout, state: KidsState, profile: ChildProfile, sources: List<StoredSource>) {
         val library = profile.approvedLibrary()
         val catalog = state.catalog.filter { it.kind == ParentContentKind.VIDEO }.associateBy { it.id }
-        addCards(target, sources) { source, imageHeight -> sourceCard(state, profile, source, imageHeight, library, catalog) }
+        val blockedShorts = ChildLibrary.hiddenShorts(state, profile)
+        addCards(target, sources) { source, imageHeight -> sourceCard(state, profile, source, imageHeight, library, catalog, blockedShorts) }
     }
 
     private fun <T> addCards(target: LinearLayout, items: List<T>, card: (T, Int) -> View) {
@@ -920,13 +922,14 @@ class KidsChildActivity : AppCompatActivity() {
         source: StoredSource,
         imageHeight: Int,
         library: ApprovedLibrary,
-        videoCatalog: Map<StoredContentId, ParentSearchItem>
+        videoCatalog: Map<StoredContentId, ParentSearchItem>,
+        blockedShorts: Set<StoredContentId>
     ): View {
         val kind = if (source.kind == SourceKind.PLAYLIST) ParentContentKind.PLAYLIST else ParentContentKind.CHANNEL
         val item = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }
         val title = item?.title ?: source.id.id
         if (source.kind == SourceKind.PLAYLIST) {
-            return playlistCard(state, profile, source, item, title, imageHeight, KidsCardMetadata.playlistPreview(source, library, videoCatalog))
+            return playlistCard(state, profile, source, item, title, imageHeight, KidsCardMetadata.playlistPreview(source, library, videoCatalog, blockedShorts))
         }
         val card = LinearLayout(this).apply {
             tag = "kids-source-${source.id.id}"
@@ -1170,7 +1173,8 @@ class KidsChildActivity : AppCompatActivity() {
         val title = state.catalog.firstOrNull { it.kind == kind && it.id == source.id }?.title ?: source.id.id
         heading(title, getString(if (source.kind == SourceKind.PLAYLIST) R.string.kids_category_playlists else R.string.kids_category_channels))
         val library = profile.approvedLibrary()
-        val videos = source.videos.filter { library.canPlay(it.toContentId()) }
+        val blockedShorts = ChildLibrary.hiddenShorts(state, profile)
+        val videos = source.videos.filter { VideoIdentity.canonicalize(it) !in blockedShorts && library.canPlay(it.toContentId()) }
         val items = videos.take(shown).mapNotNull { id -> state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == id } }
         if (items.isEmpty()) emptyCard(getString(R.string.kids_no_videos))
         addVideoGrid(root, items) { item ->
@@ -1342,8 +1346,8 @@ class KidsChildActivity : AppCompatActivity() {
                 if (state.selectedProfileId != profileId || profile == null || profile.remainingMillis <= 0 || (!manual && !profile.autoplay)) {
                     null
                 } else {
-                    val source = profile.sources.firstOrNull { it.kind == SourceKind.PLAYLIST && it.id == playlist && it.enabled }
-                    KidsPlayback.nextAfter(profile, source, current, ChildLibrary.videos(state, profileId).map { it.id }, unavailable, manual)
+                    val source = ChildLibrary.sources(profile).firstOrNull { it.kind == SourceKind.PLAYLIST && it.id == playlist }
+                    KidsPlayback.nextAfter(profile, source, current, ChildLibrary.videos(state, profileId).map { it.id }, unavailable + ChildLibrary.hiddenShorts(state, profile), manual)
                 }
             }.getOrNull()
             runOnUiThread {
@@ -1481,6 +1485,7 @@ class KidsChildActivity : AppCompatActivity() {
                             if (screen != Screen.PROFILE_PICKER || pickerOpenedWithActiveSession) display(state)
                         } else {
                             showRemaining(profile.remainingMillis)
+                            refreshRenderedLibrary(state)
                         }
                         scheduleTick(ticket)
                     }, onFailure = { showStorageError() })
@@ -1489,33 +1494,38 @@ class KidsChildActivity : AppCompatActivity() {
         }, 1_000)
     }
 
+    /** A refresh can finish one source while other sources are still loading. */
+    private fun refreshRenderedLibrary(state: KidsState) {
+        val old = renderedHomeState ?: return
+        val oldProfile = old.profiles.firstOrNull { it.id == old.selectedProfileId }
+        val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId && it.enabled }
+        fun sources(value: ChildProfile?) = value?.sources?.map { it.copy(activeRefreshToken = null, activePlaylistRefreshToken = null) }
+        val changed = old.selectedProfileId != state.selectedProfileId || old.catalog != state.catalog ||
+            oldProfile?.approvedVideos != profile?.approvedVideos || oldProfile?.hiddenVideos != profile?.hiddenVideos ||
+            oldProfile?.favorites != profile?.favorites || oldProfile?.hiddenChannelPlaylists != profile?.hiddenChannelPlaylists ||
+            oldProfile?.showShorts != profile?.showShorts ||
+            sources(oldProfile) != sources(profile)
+        if (!changed) return
+        when (screen) {
+            Screen.HOME -> display(state)
+
+            Screen.SOURCE -> {
+                val source = profile?.let { ChildLibrary.sources(it) }?.firstOrNull { (it.kind to it.id) == openSource }
+                if (profile == null || source == null || profile.remainingMillis <= 0) display(state) else showSource(state, profile, source, resetScroll = false)
+            }
+
+            else -> Unit
+        }
+    }
+
     private fun scheduleSources(ticket: Int, delay: Long) {
         handler.postDelayed({
             if (!visible || generation != ticket) return@postDelayed
             sourceWorker.execute {
-                val state = runCatching { ApprovedSourceRefresher(storage, ExtractorSourceFetcher()).refreshAll() }.getOrNull()
+                // The regular state tick updates the screen as each source becomes available.
+                runCatching { ApprovedSourceRefresher(storage, ExtractorSourceFetcher(), ExtractorChannelPlaylistFetcher()).refreshAll() }
                 runOnUiThread {
-                    if (!visible || generation != ticket) return@runOnUiThread
-                    if (state != null) {
-                        val old = renderedHomeState
-                        displayedState = state
-                        val active = playback
-                        if (active != null && !ChildPlaybackAccess.allowed(state, active.profileId, active.video)) {
-                            stopPlayback()
-                            display(state)
-                        } else if (screen == Screen.HOME && old != null &&
-                            (old.catalog != state.catalog || old.profiles.map { it.sources } != state.profiles.map { it.sources })
-                        ) {
-                            display(state)
-                        } else if (screen == Screen.SOURCE && old != null &&
-                            (old.catalog != state.catalog || old.profiles.map { it.sources } != state.profiles.map { it.sources })
-                        ) {
-                            val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId && it.enabled }
-                            val source = profile?.sources?.firstOrNull { (it.kind to it.id) == openSource && it.enabled }
-                            if (profile == null || source == null || profile.remainingMillis <= 0) display(state) else showSource(state, profile, source, resetScroll = false)
-                        }
-                    }
-                    scheduleSources(ticket, SOURCE_REFRESH_MILLIS)
+                    if (visible && generation == ticket) scheduleSources(ticket, SOURCE_REFRESH_MILLIS)
                 }
             }
         }, delay)

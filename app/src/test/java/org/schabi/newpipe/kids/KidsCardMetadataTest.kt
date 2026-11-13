@@ -33,4 +33,18 @@ class KidsCardMetadataTest {
         assertNull(KidsCardMetadata.duration(-1))
         assertNull(KidsCardMetadata.duration(0))
     }
+
+    @Test fun `playlist preview hides identified shorts when requested`() {
+        val regular = VideoIdentity.youtube("e_04ZrNroTo")
+        val short = VideoIdentity.youtube("dQw4w9WgXcQ")
+        val playlist = StoredSource(SourceKind.PLAYLIST, StoredContentId(0, "list"), videos = listOf(short, regular))
+        val profile = ChildProfile("a", "A", sessionLimitMinutes = 1, remainingMillis = 1, sources = listOf(playlist))
+        val catalog = listOf(
+            ParentSearchItem(ParentContentKind.VIDEO, short, "Short", "https://youtu.be/${short.id}", thumbnailUrl = "short.jpg", isShortForm = true),
+            ParentSearchItem(ParentContentKind.VIDEO, regular, "Regular", "https://youtu.be/${regular.id}", thumbnailUrl = "regular.jpg")
+        ).associateBy { it.id }
+        val preview = KidsCardMetadata.playlistPreview(playlist, profile.approvedLibrary(), catalog, blockedShorts = setOf(short))
+        assertEquals(1, preview.visibleCount)
+        assertEquals("regular.jpg", preview.thumbnailUrl)
+    }
 }

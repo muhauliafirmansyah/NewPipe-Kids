@@ -41,19 +41,21 @@ class ExtractorSourceFetcher : SourceVideoFetcher {
         val tabs = info.tabs.filter { tab -> tab.contentFilters.any { it in supportedTabs } }
         check(tabs.isNotEmpty()) { "Could not determine the channel's video tabs" }
         return tabs.flatMap { tab ->
+            val shortTab = ChannelTabs.SHORTS in tab.contentFilters
             val first = ChannelTabInfo.getInfo(service, tab)
             check(first.errors.isEmpty()) { "Channel tab extraction was incomplete" }
-            collectSourcePages(SourcePage(first.relatedItems.filterIsInstance<StreamInfoItem>().map { video(it, service.serviceId) }, first.nextPage)) { page ->
+            collectSourcePages(SourcePage(first.relatedItems.filterIsInstance<StreamInfoItem>().map { video(it, service.serviceId, shortTab) }, first.nextPage)) { page ->
                 val next = ChannelTabInfo.getMoreItems(service, tab, page)
                 check(next.errors.isEmpty()) { "Channel page extraction was incomplete" }
-                SourcePage(next.items.filterIsInstance<StreamInfoItem>().map { video(it, service.serviceId) }, next.nextPage)
+                SourcePage(next.items.filterIsInstance<StreamInfoItem>().map { video(it, service.serviceId, shortTab) }, next.nextPage)
             }
         }
     }
 
-    private fun video(item: StreamInfoItem, serviceId: Int): ParentSearchItem {
+    private fun video(item: StreamInfoItem, serviceId: Int, shortTab: Boolean = false): ParentSearchItem {
         require(item.serviceId == serviceId) { "Unexpected video service" }
-        return requireNotNull(ParentContentSearch.toItem(item)) { "Could not read video identity or title" }
+        val video = requireNotNull(ParentContentSearch.toItem(item)) { "Could not read video identity or title" }
+        return if (shortTab) video.copy(isShortForm = true) else video
     }
 }
 

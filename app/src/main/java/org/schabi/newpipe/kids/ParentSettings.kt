@@ -23,6 +23,8 @@ class ParentSettings(
 
     fun setProfileEnabled(pin: String, id: String, enabled: Boolean): KidsState = authorized(pin) { ProfileManager.setEnabled(it, id, enabled) }
 
+    fun setShowShorts(pin: String, id: String, show: Boolean): KidsState = authorized(pin) { ProfileManager.setShowShorts(it, id, show) }
+
     fun removeProfile(pin: String, id: String): KidsState = authorized(pin) { ProfileManager.remove(it, id) }
 
     fun setSessionLimit(pin: String, id: String, minutes: Int): KidsState = authorized(pin) { ProfileManager.setSessionLimit(it, id, minutes) }
@@ -54,7 +56,7 @@ class ParentSettings(
                 ApprovalManager.approveSource(state, profiles, SourceKind.PLAYLIST, item.id)
             }
         }
-        approved.copy(catalog = approved.catalog.filterNot { it.kind == item.kind && it.id == item.id } + item)
+        approved.copy(catalog = KidsCatalog.merge(approved.catalog, listOf(item)))
     }
 
     fun approveVideo(pin: String, profiles: Set<String>, video: StoredContentId): KidsState = authorized(pin) { ApprovalManager.approveVideo(it, profiles, video) }
@@ -66,6 +68,8 @@ class ParentSettings(
     fun approveSource(pin: String, profiles: Set<String>, kind: SourceKind, id: StoredContentId): KidsState = authorized(pin) { ApprovalManager.approveSource(it, profiles, kind, id) }
 
     fun removeSource(pin: String, profiles: Set<String>, kind: SourceKind, id: StoredContentId): KidsState = authorized(pin) { ApprovalManager.removeSource(it, profiles, kind, id) }
+
+    fun setChannelPlaylistHidden(pin: String, profiles: Set<String>, playlist: StoredContentId, hidden: Boolean): KidsState = authorized(pin) { ApprovalManager.setChannelPlaylistHidden(it, profiles, playlist, hidden) }
 
     fun setSourceEnabled(
         pin: String,

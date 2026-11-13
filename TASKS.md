@@ -123,6 +123,19 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   - [x] Connect profile selection, search, favorites and approved playlists to
     a child home; test profile isolation and hidden videos on an emulator.
   - [x] Verify approved video, channel, and playlist filtering on an emulator.
+- [x] Show channel playlists automatically, restricted to that channel's own
+  approved videos; directly approved playlists include all their videos.
+  - [x] Verify discovery, refresh and last-known snapshots, profile isolation,
+    explicit playlist approval, parent hides, and playlist playback using unit
+    tests and an emulator.
+- [x] Show each video and playlist once in combined child lists, including when
+  approvals overlap; verify the child filters and search on an emulator.
+- [x] Add per-profile parent controls to show or hide service-identified Shorts
+  across child browsing, playlist previews, search, and playback; document
+  that Shorts metadata may be incomplete. Verify per-profile settings, real
+  Shorts identification, playlist skipping, and stopping playback on an emulator.
+  - [ ] Investigate reliable identification when a service omits a Shorts
+    label, including videos stored before Shorts metadata was added.
 - [x] Limit browsing, search, related content, and recommendations to the
   active profile's approved library.
 - [x] Enforce approval checks at every playback entry point, including links,

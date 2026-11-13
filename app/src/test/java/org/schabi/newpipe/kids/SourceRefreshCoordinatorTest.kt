@@ -92,11 +92,14 @@ class SourceRefreshCoordinatorTest {
         initial = ApprovalManager.approveSource(initial, setOf("b"), SourceKind.PLAYLIST, source)
         val store = storage(initial)
         val calls = mutableListOf<StoredContentId>()
-        val refreshed = ApprovedSourceRefresher(store) { _, id ->
-            calls.add(id)
-            if (id == broken) throw IllegalStateException("offline")
-            listOf(item(newVideo))
-        }.refreshAll()
+        val refreshed = ApprovedSourceRefresher(
+            store,
+            SourceVideoFetcher { _, id ->
+                calls.add(id)
+                if (id == broken) throw IllegalStateException("offline")
+                listOf(item(newVideo))
+            }
+        ).refreshAll()
         assertEquals(2, calls.size)
         assertEquals(listOf(newVideo), refreshed.profiles.first { it.id == "a" }.sources.first { it.id == source }.videos)
         assertEquals(listOf(newVideo), refreshed.profiles.first { it.id == "b" }.sources.first { it.id == source }.videos)

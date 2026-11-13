@@ -62,6 +62,12 @@ object ApprovalManager {
         )
     }
 
+    /** Hides an inherited playlist without approving the other videos in it. */
+    fun setChannelPlaylistHidden(state: KidsState, profileIds: Set<String>, playlist: StoredContentId, hidden: Boolean): KidsState = changeProfiles(state, profileIds) { profile ->
+        require(profile.sources.any { it.kind == SourceKind.CHANNEL && it.channelPlaylists.any { entry -> entry.id == playlist } }) { "Channel playlist unavailable" }
+        profile.copy(hiddenChannelPlaylists = if (hidden) profile.hiddenChannelPlaylists + playlist else profile.hiddenChannelPlaylists - playlist)
+    }
+
     /** Persist the returned state before fetching; a newer refresh invalidates older tickets. */
     fun beginSourceRefresh(
         state: KidsState,
