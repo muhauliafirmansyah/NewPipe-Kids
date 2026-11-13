@@ -218,6 +218,11 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
     and removal still block browsing and playback access at the policy level.
   - [x] Verify cached browsing, shared links, approval overlap, removal, hides,
     session expiry, and background playback with activity tests on the phone.
+- [x] Recheck live channel and playlist discovery, Shorts labels, large-library
+  storage, and offline access on the Galaxy S24 Ultra using an isolated app.
+- [ ] Verify the new channel-playlist and per-profile Shorts controls and
+  playback on the physical phone; the isolated test app is ready but the phone
+  locked before the screen tests could run.
 - [x] Limit device-test dialog actions to the development app and verify that
   test helpers ignore other apps' windows.
 - [ ] Complete a broader bypass and safety review before recommending the app
