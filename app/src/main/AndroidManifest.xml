@@ -41,6 +41,7 @@
         tools:ignore="AllowBackup">
         <activity
             android:name=".kids.KidsChildActivity"
+            android:configChanges="orientation|screenSize"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/KidsTheme">

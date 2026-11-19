@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -62,15 +63,20 @@ class KidsPlaylistPlaybackLiveTest {
                     requireNotNull(findButton(activity.window.decorView, on)).performClick()
                 }
                 waitFor(scenario) { !storage.read().profiles.single().autoplay }
+                scenario.recreate()
+                waitForPlaying(scenario, "Second song")
                 seekToEnd(scenario)
                 waitFor(scenario, 40_000) { it.findViewById<PlayerView>(R.id.kids_player_view)?.player?.playbackState == Player.STATE_ENDED }
                 Thread.sleep(1_200)
                 scenario.onActivity { activity ->
-                    assertTrue(hasText(activity.window.decorView, "Second song"))
-                    requireNotNull(findButton(activity.window.decorView, activity.getString(R.string.kids_next_video))).performClick()
+                    assertTrue(activity.findViewById<TextView>(R.id.kids_player_title).text == "Second song")
+                    activity.findViewById<ImageButton>(R.id.kids_player_fullscreen).performClick()
+                    activity.findViewById<ImageButton>(R.id.kids_player_next).performClick()
                 }
                 waitForPlaying(scenario, "Third song")
                 scenario.onActivity { activity ->
+                    assertTrue(activity.findViewById<ImageButton>(R.id.kids_player_fullscreen).contentDescription == activity.getString(R.string.kids_exit_fullscreen))
+                    activity.findViewById<ImageButton>(R.id.kids_player_fullscreen).performClick()
                     val off = activity.getString(R.string.kids_autoplay_status, activity.getString(R.string.kids_off))
                     requireNotNull(findButton(activity.window.decorView, off)).performClick()
                 }
@@ -194,18 +200,14 @@ class KidsPlaylistPlaybackLiveTest {
         val player = activity.findViewById<PlayerView>(R.id.kids_player_view)?.player as? ExoPlayer
         val counters = player?.videoDecoderCounters
         counters?.ensureUpdated()
-        hasText(activity.window.decorView, title) && (player?.currentPosition ?: 0) >= 1_000 && (counters?.renderedOutputBufferCount ?: 0) > 0
+        activity.findViewById<TextView>(R.id.kids_player_title)?.text == title &&
+            (player?.currentPosition ?: 0) >= 1_000 && (counters?.renderedOutputBufferCount ?: 0) > 0
     }
 
     private fun findButton(view: View, text: String): Button? {
         if (view is Button && view.text.toString() == text) return view
         if (view is ViewGroup) for (index in 0 until view.childCount) findButton(view.getChildAt(index), text)?.let { return it }
         return null
-    }
-
-    private fun hasText(view: View, text: String): Boolean {
-        if (view is TextView && view.text.toString() == text) return true
-        return view is ViewGroup && (0 until view.childCount).any { hasText(view.getChildAt(it), text) }
     }
 
     private fun waitFor(scenario: ActivityScenario<KidsChildActivity>, timeout: Long = 10_000, condition: (KidsChildActivity) -> Boolean) {

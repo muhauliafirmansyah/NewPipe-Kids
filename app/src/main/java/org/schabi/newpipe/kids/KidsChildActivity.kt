@@ -26,8 +26,10 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
@@ -57,6 +59,7 @@ class KidsChildActivity : AppCompatActivity() {
     // Accessed on worker only; all session operations are serialized there.
     private var runningProfileId: String? = null
     private lateinit var chrome: LinearLayout
+    private lateinit var windowContent: FrameLayout
     private lateinit var root: LinearLayout
     private lateinit var header: LinearLayout
     private lateinit var navigation: LinearLayout
@@ -81,6 +84,19 @@ class KidsChildActivity : AppCompatActivity() {
     private var searchText = ""
     private var playbackGeneration = 0
     private var playback: ActivePlayback? = null
+    private var pendingPlayback: PlaybackRequest? = null
+    private var playerView: PlayerView? = null
+    private var playerFullscreen = false
+    private var restoreFullscreen = false
+    private var fullscreenWarning: TextView? = null
+    private var fullscreenTopBar: View? = null
+    private var fullscreenSuggestions: HorizontalScrollView? = null
+    private var fullscreenSuggestionRow: LinearLayout? = null
+    private var fullscreenSuggestionCount = 0
+    private var playerSuggestions: LinearLayout? = null
+    private var resumePlaybackWhenVisible = false
+    private var playbackAwaitingValidation = false
+    private var currentOrientation = Configuration.ORIENTATION_UNDEFINED
     private var incomingVideo: StoredContentId? = null
 
     private sealed class LibraryCard {
@@ -97,12 +113,25 @@ class KidsChildActivity : AppCompatActivity() {
         val sampler: PlaybackSampler = PlaybackSampler()
     )
 
+    private data class PlaybackRequest(
+        val profileId: String,
+        val video: StoredContentId,
+        val playlist: StoredContentId?,
+        val unavailable: Set<StoredContentId>,
+        val automatic: Boolean,
+        val positionMillis: Long = 0,
+        val playWhenReady: Boolean = true
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         activeTab = runCatching { Tab.valueOf(savedInstanceState?.getString("kids_tab").orEmpty()) }.getOrDefault(Tab.HOME)
         category = runCatching { Category.valueOf(savedInstanceState?.getString("kids_category").orEmpty()) }.getOrDefault(Category.ALL)
         searchText = savedInstanceState?.getString("kids_search").orEmpty()
         restoreProfileEditor = savedInstanceState?.getBoolean("kids_profile_editor") == true
+        pendingPlayback = savedInstanceState?.let(::readPlaybackRequest)
+        restoreFullscreen = savedInstanceState?.getBoolean("kids_player_fullscreen") == true
+        currentOrientation = resources.configuration.orientation
         readIncomingIntent(intent)
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = window.decorView.systemUiVisibility and
@@ -152,7 +181,8 @@ class KidsChildActivity : AppCompatActivity() {
             68
         }
         chrome.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(navigationHeight)))
-        setContentView(chrome)
+        windowContent = FrameLayout(this).apply { addView(chrome) }
+        setContentView(windowContent)
         renderHeader(null)
         navigation.visibility = View.GONE
         onBackPressedDispatcher.addCallback(
@@ -174,10 +204,86 @@ class KidsChildActivity : AppCompatActivity() {
         outState.putString("kids_category", category.name)
         outState.putString("kids_search", searchText)
         outState.putBoolean("kids_profile_editor", screen == Screen.PROFILE_EDIT)
+        outState.putBoolean("kids_player_fullscreen", playerFullscreen || restoreFullscreen)
+        val request = playback?.let { active ->
+            PlaybackRequest(
+                active.profileId,
+                active.video,
+                active.playlist,
+                active.unavailable,
+                false,
+                active.player.currentPosition.coerceAtLeast(0),
+                if (visible) active.player.playWhenReady else resumePlaybackWhenVisible
+            )
+        } ?: pendingPlayback
+        request?.let { writePlaybackRequest(outState, it) }
         super.onSaveInstanceState(outState)
     }
 
+    private fun writePlaybackRequest(bundle: Bundle, request: PlaybackRequest) {
+        bundle.putString("kids_playback_profile", request.profileId)
+        bundle.putString("kids_playback_video", request.video.id)
+        bundle.putInt("kids_playback_video_service", request.video.serviceId)
+        bundle.putString("kids_playback_playlist", request.playlist?.id)
+        bundle.putInt("kids_playback_playlist_service", request.playlist?.serviceId ?: 0)
+        bundle.putStringArrayList("kids_playback_unavailable", ArrayList(request.unavailable.map { it.id }))
+        bundle.putIntArray("kids_playback_unavailable_services", request.unavailable.map { it.serviceId }.toIntArray())
+        bundle.putBoolean("kids_playback_automatic", request.automatic)
+        bundle.putLong("kids_playback_position", request.positionMillis)
+        bundle.putBoolean("kids_playback_playing", request.playWhenReady)
+    }
+
+    private fun readPlaybackRequest(bundle: Bundle): PlaybackRequest? = runCatching {
+        val profile = bundle.getString("kids_playback_profile") ?: return null
+        val video = bundle.getString("kids_playback_video") ?: return null
+        val playlist = bundle.getString("kids_playback_playlist")?.let {
+            StoredContentId(bundle.getInt("kids_playback_playlist_service"), it)
+        }
+        val ids = bundle.getStringArrayList("kids_playback_unavailable").orEmpty()
+        val services = bundle.getIntArray("kids_playback_unavailable_services") ?: intArrayOf()
+        val unavailable = ids.zip(services.toList()).mapTo(mutableSetOf()) { (id, service) -> StoredContentId(service, id) }
+        PlaybackRequest(
+            profile,
+            StoredContentId(bundle.getInt("kids_playback_video_service"), video),
+            playlist,
+            unavailable,
+            bundle.getBoolean("kids_playback_automatic"),
+            bundle.getLong("kids_playback_position").coerceAtLeast(0),
+            bundle.getBoolean("kids_playback_playing", true)
+        )
+    }.getOrNull()
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val orientationChanged = currentOrientation != newConfig.orientation
+        currentOrientation = newConfig.orientation
+        if (screen == Screen.PLAYER && playback != null) {
+            val headerPadding = when {
+                isShortLandscape() -> 0
+                isLandscape() -> 4
+                else -> 9
+            }
+            header.setPadding(dp(16), dp(headerPadding), dp(16), dp(headerPadding))
+            val navigationHeight = when {
+                isShortLandscape() -> 48
+                isLandscape() -> 56
+                else -> 68
+            }
+            navigation.layoutParams = navigation.layoutParams.apply { height = dp(navigationHeight) }
+            if (orientationChanged) setPlayerFullscreen(isLandscape()) else updateInlinePlayerSize()
+            displayedState?.let(::renderPlayerSuggestions)
+        } else {
+            // Other screens use the same fresh layouts they receive on a normal rotation.
+            recreate()
+        }
+    }
+
     private fun handleBack(): Boolean = when {
+        screen == Screen.PLAYER && playerFullscreen -> {
+            setPlayerFullscreen(false)
+            true
+        }
+
         screen == Screen.PROFILE_EDIT -> {
             displayedState?.let(::showProfilePicker)
             true
@@ -222,7 +328,16 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
-        stopPlayback()
+        playback?.let { active ->
+            if (!playbackAwaitingValidation) resumePlaybackWhenVisible = active.player.playWhenReady
+            playbackAwaitingValidation = true
+            saveSample(active)
+            active.player.pause()
+            // Prevent the child from restarting playback until approval is rechecked.
+            playerView?.useController = false
+        }
+        // Extraction is restarted on return, after the current approval is checked again.
+        if (pendingPlayback != null) playbackGeneration++
         visible = false
         generation++
         handler.removeCallbacksAndMessages(null)
@@ -236,6 +351,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        stopPlayback()
         sourceWorker.shutdownNow()
         network.shutdownNow()
         worker.shutdown()
@@ -266,15 +382,47 @@ class KidsChildActivity : AppCompatActivity() {
                 if (!visible || generation != ticket) return@runOnUiThread
                 result.fold(onSuccess = { state ->
                     if (state.parentPin == null && state.profiles.isEmpty()) {
+                        stopPlayback()
                         showSetup()
                     } else if (state.parentPin == null) {
                         showStorageError()
                     } else {
-                        display(state)
+                        restorePlaybackOrDisplay(state)
                         scheduleTick(ticket)
                         scheduleSources(ticket, 0)
                     }
                 }, onFailure = { showStorageError() })
+            }
+        }
+    }
+
+    private fun restorePlaybackOrDisplay(state: KidsState) {
+        val active = playback
+        val pending = pendingPlayback
+        when {
+            active != null && ChildPlaybackAccess.allowed(state, active.profileId, active.video) -> {
+                displayedState = state
+                val profile = state.profiles.first { it.id == active.profileId }
+                root.findViewById<Button>(R.id.kids_player_autoplay)?.text = autoplayText(profile.autoplay)
+                root.findViewById<Button>(R.id.kids_player_favorite)?.text = favoriteText(active.video in profile.favorites)
+                showRemaining(profile.remainingMillis)
+                renderPlayerSuggestions(state)
+                playbackAwaitingValidation = false
+                playerView?.useController = true
+                if (resumePlaybackWhenVisible) active.player.play()
+                resumePlaybackWhenVisible = false
+            }
+
+            pending != null && ChildPlaybackAccess.allowed(state, pending.profileId, pending.video) -> {
+                displayedState = state
+                incomingVideo = null
+                startVideo(pending)
+            }
+
+            else -> {
+                if (active != null || pending != null) stopPlayback()
+                restoreFullscreen = false
+                display(state)
             }
         }
     }
@@ -302,6 +450,8 @@ class KidsChildActivity : AppCompatActivity() {
         chrome.background = KidsUi.childBackground()
         @Suppress("DEPRECATION")
         window.statusBarColor = 0xFF05065C.toInt()
+        @Suppress("DEPRECATION")
+        if (!isLandscape()) window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
         header.visibility = View.VISIBLE
         root.setPadding(dp(16), dp(if (isShortLandscape()) 0 else 4), dp(16), dp(20))
         openSource = null
@@ -1185,7 +1335,15 @@ class KidsChildActivity : AppCompatActivity() {
 
     /** Extraction happens off the UI thread, with an approval check both before and after it. */
     private fun startVideo(profileId: String, video: StoredContentId, playlist: StoredContentId?, unavailable: Set<StoredContentId>, automatic: Boolean) {
+        startVideo(PlaybackRequest(profileId, video, playlist, unavailable, automatic))
+    }
+
+    private fun startVideo(request: PlaybackRequest) {
+        val (profileId, video, playlist, unavailable, automatic) = request
+        val wasFullscreen = playerFullscreen || restoreFullscreen
         stopPlayback()
+        restoreFullscreen = wasFullscreen
+        pendingPlayback = request
         screen = Screen.LOADING
         val ticket = ++playbackGeneration
         root.removeAllViews()
@@ -1212,9 +1370,11 @@ class KidsChildActivity : AppCompatActivity() {
                         if (!stillAllowed) {
                             returnToLibrary()
                         } else if (resolved.isFailure) {
+                            pendingPlayback = null
                             showUnavailable(profileId, video, playlist, unavailable, automatic)
                         } else {
-                            showPlayer(requireNotNull(state), profileId, video, playlist, unavailable, resolved.getOrThrow())
+                            pendingPlayback = null
+                            showPlayer(requireNotNull(state), request, resolved.getOrThrow())
                         }
                     }
                 }
@@ -1222,13 +1382,15 @@ class KidsChildActivity : AppCompatActivity() {
         }
     }
 
-    private fun showPlayer(state: KidsState, profileId: String, video: StoredContentId, playlist: StoredContentId?, unavailable: Set<StoredContentId>, resolved: ResolvedVideo) {
+    private fun showPlayer(state: KidsState, request: PlaybackRequest, resolved: ResolvedVideo) {
+        val (profileId, video, playlist, unavailable) = request
         screen = Screen.PLAYER
         displayedState = state
         val profile = state.profiles.first { it.id == profileId }
         val player = ExoPlayer.Builder(this).build()
         val active = ActivePlayback(profileId, video, playlist, unavailable, player)
         playback = active
+        renderedHomeState = state
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 saveSample(active)
@@ -1250,20 +1412,47 @@ class KidsChildActivity : AppCompatActivity() {
             }
         })
         root.removeAllViews()
-        renderHeader(profile)
+        chrome.setBackgroundColor(Color.BLACK)
+        header.visibility = View.GONE
         navigation.visibility = View.GONE
-        button(getString(R.string.kids_back_to_library)) { returnToLibrary() }
-        val availableWidth = (resources.configuration.screenWidthDp - 32).coerceAtLeast(240)
-        val playerHeight = minOf(availableWidth * 9 / 16, (resources.configuration.screenHeightDp * 0.55f).toInt()).coerceAtLeast(150)
-        val view = PlayerView(this).apply {
-            id = R.id.kids_player_view
-            this.player = player
-            background = KidsUi.shape(this@KidsChildActivity, KidsUi.ink, 18)
-            clipToOutline = true
+        root.setPadding(0, 0, 0, dp(20))
+        @Suppress("DEPRECATION")
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        root.addView(playerTitleBar(state, active, fullscreen = false))
+        timeLabel = KidsUi.text(this, "", 14f, Color.WHITE, true).apply {
+            id = R.id.kids_time_remaining
+            setPadding(dp(16), dp(6), dp(16), dp(6))
+            setBackgroundColor(0xFF4B2020.toInt())
+            visibility = View.GONE
         }
-        root.addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(playerHeight)).apply { topMargin = dp(14) })
-        addBlock(root, KidsUi.text(this, state.catalog.firstOrNull { it.kind == ParentContentKind.VIDEO && it.id == video }?.title ?: video.id, 20f, Color.WHITE, true), 18)
-        val autoplay = button(autoplayText(profile.autoplay)) { }
+        root.addView(timeLabel)
+        showRemaining(profile.remainingMillis)
+        val view = (layoutInflater.inflate(R.layout.kids_player_view, root, false) as PlayerView).apply {
+            this.player = player
+            setBackgroundColor(Color.BLACK)
+        }
+        playerView = view
+        view.setControllerVisibilityListener { visibility ->
+            if (playerView === view && playerFullscreen) updateFullscreenOverlays(visibility == View.VISIBLE)
+        }
+        view.findViewById<ImageButton>(R.id.kids_player_fullscreen).setOnClickListener { setPlayerFullscreen(!playerFullscreen) }
+        view.findViewById<ImageButton>(R.id.kids_player_next).apply {
+            visibility = if (playlist == null) View.GONE else View.VISIBLE
+            contentDescription = getString(R.string.kids_next_video)
+            setOnClickListener {
+                saveSample(active)
+                findNext(profileId, video, playlist, unavailable, manual = true)
+            }
+        }
+        root.addView(view, inlinePlayerLayout())
+        addBlock(root, KidsUi.text(this, getString(R.string.kids_more_videos), 19f, Color.WHITE, true).apply { setPadding(dp(14), 0, dp(14), 0) }, 18)
+        playerSuggestions = LinearLayout(this).apply {
+            id = R.id.kids_player_suggestions
+            orientation = LinearLayout.VERTICAL
+        }
+        root.addView(playerSuggestions)
+        renderPlayerSuggestions(state)
+        val autoplay = button(autoplayText(profile.autoplay)) { }.apply { id = R.id.kids_player_autoplay }
         autoplay.setOnClickListener {
             updateProfile(profileId, { it.copy(autoplay = !it.autoplay) }) { updated ->
                 displayedState = updated
@@ -1271,7 +1460,7 @@ class KidsChildActivity : AppCompatActivity() {
                 autoplay.text = autoplayText(enabled)
             }
         }
-        val favorite = button(favoriteText(video in profile.favorites)) { }
+        val favorite = button(favoriteText(video in profile.favorites)) { }.apply { id = R.id.kids_player_favorite }
         favorite.setOnClickListener {
             updateProfile(profileId, { current ->
                 require(current.approvedLibrary().canPlay(video.toContentId()))
@@ -1289,7 +1478,276 @@ class KidsChildActivity : AppCompatActivity() {
         }
         player.setMediaSource(ExtractorVideoResolver.mediaSource(this, resolved))
         player.prepare()
-        player.play()
+        if (request.positionMillis > 0) player.seekTo(request.positionMillis)
+        player.playWhenReady = request.playWhenReady
+        setPlayerFullscreen(isLandscape() || restoreFullscreen)
+        restoreFullscreen = false
+    }
+
+    private fun playerTitleBar(state: KidsState, active: ActivePlayback, fullscreen: Boolean): View {
+        val item = ChildLibrary.videos(state, active.profileId).firstOrNull { it.id == VideoIdentity.canonicalize(active.video) }
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(if (fullscreen) 0x99000000.toInt() else Color.BLACK)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        val back = ImageButton(this).apply {
+            if (!fullscreen) id = R.id.kids_player_back
+            setImageResource(R.drawable.ic_arrow_back)
+            setColorFilter(Color.WHITE)
+            setBackgroundColor(Color.TRANSPARENT)
+            contentDescription = getString(R.string.kids_back_to_library)
+            setOnClickListener { if (fullscreen) setPlayerFullscreen(false) else returnToLibrary() }
+        }
+        bar.addView(back, LinearLayout.LayoutParams(dp(48), dp(48)))
+        val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        labels.addView(
+            KidsUi.text(this, item?.title ?: active.video.id, 16f, Color.WHITE).apply {
+                if (!fullscreen) id = R.id.kids_player_title
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            }
+        )
+        item?.uploaderName?.takeIf { it.isNotBlank() }?.let { uploader ->
+            labels.addView(
+                KidsUi.text(this, uploader, 12f, 0xFFCCCCCC.toInt()).apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                }
+            )
+        }
+        bar.addView(labels, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val options = ImageButton(this).apply {
+            if (!fullscreen) id = R.id.kids_player_options
+            setImageResource(R.drawable.ic_more_vert)
+            setColorFilter(Color.WHITE)
+            setBackgroundColor(Color.TRANSPARENT)
+            contentDescription = getString(R.string.kids_player_options)
+            setOnClickListener { showPlayerOptions(this) }
+        }
+        bar.addView(options, LinearLayout.LayoutParams(dp(48), dp(48)))
+        return bar
+    }
+
+    private fun showPlayerOptions(anchor: View) {
+        val active = playback ?: return
+        val profile = displayedState?.profiles?.firstOrNull { it.id == active.profileId } ?: return
+        PopupMenu(this, anchor).apply {
+            menu.add(autoplayText(profile.autoplay)).setOnMenuItemClickListener {
+                root.findViewById<Button>(R.id.kids_player_autoplay)?.performClick()
+                true
+            }
+            menu.add(favoriteText(active.video in profile.favorites)).setOnMenuItemClickListener {
+                root.findViewById<Button>(R.id.kids_player_favorite)?.performClick()
+                true
+            }
+            menu.add(getString(R.string.kids_parent_title)).setOnMenuItemClickListener {
+                startActivity(Intent(this@KidsChildActivity, KidsParentActivity::class.java))
+                true
+            }
+            show()
+        }
+    }
+
+    private fun renderPlayerSuggestions(state: KidsState) {
+        val active = playback ?: return
+        val profile = state.profiles.firstOrNull { it.id == active.profileId && it.enabled } ?: return
+        val videos = ChildLibrary.videos(state, profile.id)
+        val byId = videos.associateBy { it.id }
+        val source = ChildLibrary.sources(profile).firstOrNull { it.kind == SourceKind.PLAYLIST && it.id == active.playlist }
+        val playlistVideos = source?.videos.orEmpty().mapNotNull { byId[VideoIdentity.canonicalize(it)] }
+        val ordered = (if (source != null) playlistVideos else videos).distinctBy { it.id }
+        val shown = ordered.take(PLAYER_SUGGESTION_LIMIT)
+        playerSuggestions?.let { target ->
+            target.removeAllViews()
+            val configuration = resources.configuration
+            val columns = KidsGridLayout.columns(configuration.screenWidthDp, configuration.smallestScreenWidthDp)
+            val cardWidth = if (columns == 1) {
+                (configuration.screenWidthDp * 0.70f).toInt().coerceAtLeast(180)
+            } else {
+                ((configuration.screenWidthDp - 32 - (columns - 1) * 12) / columns).coerceAtLeast(120)
+            }
+            shown.chunked(columns).forEach { items ->
+                val row = LinearLayout(this).apply { gravity = Gravity.CENTER_HORIZONTAL }
+                items.forEach { item ->
+                    row.addView(
+                        playerSuggestion(item, active),
+                        LinearLayout.LayoutParams(dp(cardWidth), dp(cardWidth * 9 / 16)).apply {
+                            setMargins(dp(4), dp(6), dp(4), dp(6))
+                        }
+                    )
+                }
+                target.addView(row, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            }
+            if (ordered.size > shown.size) {
+                val all = KidsUi.button(this, getString(R.string.kids_show_all), KidsUi.ButtonStyle.GHOST).apply {
+                    setTextColor(Color.WHITE)
+                    gravity = Gravity.CENTER
+                    setOnClickListener {
+                        activeTab = Tab.HOME
+                        category = Category.VIDEOS
+                        returnToLibrary()
+                    }
+                }
+                target.addView(all)
+            }
+        }
+        fullscreenSuggestionCount = shown.size
+        fullscreenSuggestionRow?.let { row ->
+            row.removeAllViews()
+            shown.forEach { item ->
+                row.addView(playerSuggestion(item, active), LinearLayout.LayoutParams(dp(160), dp(90)).apply { marginEnd = dp(8) })
+            }
+        }
+        if (playerFullscreen) updateFullscreenOverlays(playerView?.isControllerVisible == true)
+        renderedHomeState = state
+    }
+
+    private fun playerSuggestion(item: ParentSearchItem, active: ActivePlayback): View {
+        val card = FrameLayout(this).apply {
+            tag = "kids-player-suggestion-${item.id.id}"
+            background = KidsUi.shape(this@KidsChildActivity, 0xFF364155.toInt(), 8)
+            clipToOutline = true
+            contentDescription = getString(R.string.kids_watch_description, item.title)
+            isClickable = true
+            setOnClickListener {
+                if (playback !== active) return@setOnClickListener
+                val state = displayedState ?: return@setOnClickListener
+                val profile = state.profiles.firstOrNull { it.id == active.profileId } ?: return@setOnClickListener
+                val playlist = active.playlist?.takeIf { id ->
+                    ChildLibrary.sources(profile).firstOrNull { it.kind == SourceKind.PLAYLIST && it.id == id }
+                        ?.videos?.any { VideoIdentity.canonicalize(it) == item.id } == true
+                }
+                startVideo(active.profileId, item.id, playlist, emptySet(), automatic = false)
+            }
+        }
+        val image = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        card.addView(image, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        CoilHelper.loadThumbnail(image, item.thumbnailUrl)
+        if (item.thumbnailUrl == null) {
+            card.addView(
+                KidsUi.text(this, item.title, 14f, Color.WHITE, true).apply {
+                    gravity = Gravity.CENTER
+                    maxLines = 3
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                },
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            )
+        }
+        KidsCardMetadata.duration(item.durationSeconds)?.let { duration ->
+            card.addView(
+                KidsUi.text(this, duration, 11f, Color.WHITE, true).apply {
+                    setPadding(dp(4), dp(3), dp(4), dp(3))
+                    setBackgroundColor(0xCC000000.toInt())
+                },
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END)
+            )
+        }
+        if (item.id == VideoIdentity.canonicalize(active.video)) {
+            card.foreground = KidsUi.shape(this, Color.TRANSPARENT, 8, 0xFFFF1744.toInt())
+        }
+        return card
+    }
+
+    private fun inlinePlayerLayout(): LinearLayout.LayoutParams {
+        val availableWidth = resources.configuration.screenWidthDp.coerceAtLeast(240)
+        val height = minOf(availableWidth * 9 / 16, (resources.configuration.screenHeightDp * 0.55f).toInt()).coerceAtLeast(150)
+        return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(height))
+    }
+
+    private fun updateInlinePlayerSize() {
+        playerView?.takeIf { it.parent === root }?.layoutParams = inlinePlayerLayout()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun setPlayerFullscreen(fullscreen: Boolean) {
+        val view = playerView ?: return
+        if (fullscreen != playerFullscreen) {
+            (view.parent as? ViewGroup)?.removeView(view)
+            playerFullscreen = fullscreen
+            if (fullscreen) {
+                chrome.visibility = View.GONE
+                view.setBackgroundColor(Color.BLACK)
+                view.clipToOutline = false
+                windowContent.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                fullscreenSuggestionRow = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(dp(8), dp(5), dp(8), dp(5))
+                }
+                fullscreenSuggestions = HorizontalScrollView(this).apply {
+                    id = R.id.kids_player_suggestions_fullscreen
+                    isHorizontalScrollBarEnabled = false
+                    setBackgroundColor(Color.BLACK)
+                    addView(fullscreenSuggestionRow)
+                }
+                windowContent.addView(fullscreenSuggestions, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(100), Gravity.BOTTOM))
+                fullscreenTopBar = displayedState?.let { state -> playback?.let { playerTitleBar(state, it, fullscreen = true) } }
+                fullscreenTopBar?.let { bar ->
+                    windowContent.addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
+                }
+                fullscreenWarning = KidsUi.text(this, "", 14f, Color.WHITE, true).apply {
+                    id = R.id.kids_fullscreen_warning
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                    background = KidsUi.shape(this@KidsChildActivity, 0xD9000000.toInt(), 12)
+                    visibility = View.GONE
+                }
+                windowContent.addView(
+                    fullscreenWarning,
+                    FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.END).apply {
+                        topMargin = dp(60)
+                        marginEnd = dp(12)
+                    }
+                )
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                displayedState?.let(::renderPlayerSuggestions)
+                view.showController()
+                updateFullscreenOverlays(view.isControllerVisible)
+                displayedState?.profiles?.firstOrNull { it.id == playback?.profileId }?.let { showRemaining(it.remainingMillis) }
+            } else {
+                fullscreenWarning?.let(windowContent::removeView)
+                fullscreenWarning = null
+                fullscreenTopBar?.let(windowContent::removeView)
+                fullscreenTopBar = null
+                fullscreenSuggestions?.let(windowContent::removeView)
+                fullscreenSuggestions = null
+                fullscreenSuggestionRow = null
+                fullscreenSuggestionCount = 0
+                chrome.visibility = View.VISIBLE
+                view.setBackgroundColor(Color.BLACK)
+                view.clipToOutline = false
+                root.addView(view, minOf(2, root.childCount), inlinePlayerLayout())
+                window.decorView.systemUiVisibility = 0
+                window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+            }
+        } else if (!fullscreen) {
+            updateInlinePlayerSize()
+        }
+        view.findViewById<ImageButton>(R.id.kids_player_fullscreen).apply {
+            setImageResource(if (fullscreen) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen)
+            contentDescription = getString(if (fullscreen) R.string.kids_exit_fullscreen else R.string.kids_enter_fullscreen)
+        }
+    }
+
+    private fun updateFullscreenOverlays(controlsVisible: Boolean) {
+        if (!playerFullscreen) return
+        fullscreenTopBar?.visibility = if (controlsVisible) View.VISIBLE else View.GONE
+        val showSuggestions = controlsVisible && isLandscape() && fullscreenSuggestionCount > 1
+        fullscreenSuggestions?.visibility = if (showSuggestions) View.VISIBLE else View.GONE
+        val view = playerView ?: return
+        val params = view.layoutParams as? FrameLayout.LayoutParams ?: return
+        val bottomMargin = if (showSuggestions) dp(100) else 0
+        if (params.bottomMargin != bottomMargin) {
+            params.bottomMargin = bottomMargin
+            view.layoutParams = params
+        }
     }
 
     private fun autoplayText(enabled: Boolean) = getString(R.string.kids_autoplay_status, getString(if (enabled) R.string.kids_on else R.string.kids_off))
@@ -1320,14 +1778,22 @@ class KidsChildActivity : AppCompatActivity() {
 
     private fun stopPlayback() {
         playbackGeneration++
+        pendingPlayback = null
+        resumePlaybackWhenVisible = false
+        playbackAwaitingValidation = false
         val active = playback ?: return
         saveSample(active)
+        if (playerFullscreen) setPlayerFullscreen(false)
+        playerView?.player = null
+        playerView = null
+        playerSuggestions = null
         playback = null
         active.player.release()
     }
 
     private fun returnToLibrary() {
         stopPlayback()
+        restoreFullscreen = false
         worker.execute {
             val state = runCatching { storage.read() }.getOrNull()
             runOnUiThread {
@@ -1367,6 +1833,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun showUnavailableScreen() {
+        restoreFullscreen = false
         screen = Screen.MESSAGE
         root.removeAllViews()
         renderHeader(displayedState?.profiles?.firstOrNull { it.id == displayedState?.selectedProfileId })
@@ -1514,6 +1981,8 @@ class KidsChildActivity : AppCompatActivity() {
                 if (profile == null || source == null || profile.remainingMillis <= 0) display(state) else showSource(state, profile, source, resetScroll = false)
             }
 
+            Screen.PLAYER -> renderPlayerSuggestions(state)
+
             else -> Unit
         }
     }
@@ -1536,10 +2005,15 @@ class KidsChildActivity : AppCompatActivity() {
         val clock = String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
         val minutes = displayedState?.profiles?.firstOrNull { it.id == displayedState?.selectedProfileId }?.sessionLimitMinutes ?: 1
         val warningMillis = minOf(60_000L, maxOf(10_000L, minutes * 6_000L))
+        if (screen == Screen.PLAYER) timeLabel?.visibility = if (millis in 1..warningMillis) View.VISIBLE else View.GONE
         timeLabel?.text = if (millis in 1..warningMillis) {
             getString(R.string.kids_session_warning, clock)
         } else {
             getString(R.string.kids_session_remaining, clock)
+        }
+        fullscreenWarning?.apply {
+            visibility = if (millis in 1..warningMillis) View.VISIBLE else View.GONE
+            text = getString(R.string.kids_session_warning, clock)
         }
     }
 
@@ -1575,6 +2049,7 @@ class KidsChildActivity : AppCompatActivity() {
         private const val SETUP_REQUEST = 1
         private const val SOURCE_REFRESH_MILLIS = 15 * 60_000L
         private const val RESULT_PAGE_SIZE = 40
+        private const val PLAYER_SUGGESTION_LIMIT = 20
     }
 }
 

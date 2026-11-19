@@ -166,6 +166,16 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   - [x] Connect playlist progression and the Next button to the player.
   - [x] Verify playlist playback, the toggle, Next, and the transition to general
     autoplay with real videos on an emulator.
+- [x] Restore the current video and playback position after the app returns to
+  the foreground or the activity is recreated, with a fresh approval check.
+- [x] Add a fullscreen player control and enter fullscreen on landscape rotation;
+  keep the session warning and playlist Next control available in fullscreen.
+  - [x] Verify backgrounding, restoration, rotation, session expiry, and
+    fullscreen playlist playback with real videos on an emulator.
+  - [ ] Confirm the new playback and fullscreen behavior on a physical device.
+- [x] Adapt the player to the portrait and landscape references, showing
+  deduplicated approved videos and keeping playlist suggestions within the
+  current playlist. Verify hidden videos and Shorts stay out on an emulator.
 - [x] Show a simple unavailable-video message and skip unavailable videos
   during autoplay.
 

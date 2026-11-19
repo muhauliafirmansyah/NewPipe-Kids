@@ -9,6 +9,16 @@
     <item name="kids_session_ended" type="id" />
     <item name="kids_child_search" type="id" />
     <item name="kids_player_view" type="id" />
+    <item name="kids_player_fullscreen" type="id" />
+    <item name="kids_player_next" type="id" />
+    <item name="kids_player_back" type="id" />
+    <item name="kids_player_title" type="id" />
+    <item name="kids_player_options" type="id" />
+    <item name="kids_player_suggestions" type="id" />
+    <item name="kids_player_suggestions_fullscreen" type="id" />
+    <item name="kids_fullscreen_warning" type="id" />
+    <item name="kids_player_autoplay" type="id" />
+    <item name="kids_player_favorite" type="id" />
     <item name="kids_nav_home" type="id" />
     <item name="kids_nav_search" type="id" />
     <item name="kids_nav_stuff" type="id" />

@@ -75,6 +75,10 @@
     <string name="kids_channel_label">Channel: %1$s</string>
     <string name="kids_back_to_library">Back to library</string>
     <string name="kids_loading_video">Loading video…</string>
+    <string name="kids_enter_fullscreen">Enter fullscreen</string>
+    <string name="kids_exit_fullscreen">Exit fullscreen</string>
+    <string name="kids_more_videos">More videos</string>
+    <string name="kids_player_options">Video options</string>
     <string name="kids_add_favorite">Add to favorites</string>
     <string name="kids_remove_favorite">Remove from favorites</string>
     <string name="kids_show_favorites">Favorites</string>
