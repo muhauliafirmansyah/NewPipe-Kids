@@ -18,6 +18,7 @@ import android.text.InputType
 import android.text.TextUtils
 import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -42,6 +43,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.PlaybackException
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
+import com.google.android.exoplayer2.ui.R as PlayerUiR
 import java.util.Locale
 import java.util.concurrent.Executors
 import org.schabi.newpipe.R
@@ -98,6 +100,7 @@ class KidsChildActivity : AppCompatActivity() {
     private var playbackAwaitingValidation = false
     private var currentOrientation = Configuration.ORIENTATION_UNDEFINED
     private var incomingVideo: StoredContentId? = null
+    private var tvCenterDown = false
 
     private sealed class LibraryCard {
         data class Source(val value: StoredSource) : LibraryCard()
@@ -183,6 +186,7 @@ class KidsChildActivity : AppCompatActivity() {
         chrome.addView(navigation, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(navigationHeight)))
         windowContent = FrameLayout(this).apply { addView(chrome) }
         setContentView(windowContent)
+        KidsTvNavigation.install(this)
         renderHeader(null)
         navigation.visibility = View.GONE
         onBackPressedDispatcher.addCallback(
@@ -278,7 +282,32 @@ class KidsChildActivity : AppCompatActivity() {
         }
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val center = event.keyCode == KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == KeyEvent.KEYCODE_ENTER
+        if (KidsTvNavigation.isTv(this) && center && (currentFocus === playerView || tvCenterDown) && screen == Screen.PLAYER) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                tvCenterDown = true
+                val view = playerView
+                val active = playback
+                if (visible && !playbackAwaitingValidation && view?.useController == true && active != null) {
+                    if (active.player.playWhenReady) active.player.pause() else active.player.play()
+                    view.showController()
+                }
+            } else if (event.action == KeyEvent.ACTION_UP) {
+                tvCenterDown = false
+            }
+            return true
+        }
+        if (KidsTvNavigation.moveFromInput(this, event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     private fun handleBack(): Boolean = when {
+        screen == Screen.PLAYER && playerFullscreen && KidsTvNavigation.isTv(this) -> {
+            returnToLibrary()
+            true
+        }
+
         screen == Screen.PLAYER && playerFullscreen -> {
             setPlayerFullscreen(false)
             true
@@ -328,6 +357,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        tvCenterDown = false
         playback?.let { active ->
             if (!playbackAwaitingValidation) resumePlaybackWhenVisible = active.player.playWhenReady
             playbackAwaitingValidation = true
@@ -443,6 +473,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun display(state: KidsState) {
+        val oldFocus = if (screen == Screen.HOME && renderedHomeState != null) KidsTvNavigation.remember(currentFocus) else null
         if (screen == Screen.PROFILE_EDIT) profileNameDialog?.dismiss()
         val restoreSearchFocus = screen == Screen.HOME && (activeTab == Tab.SEARCH || activeTab == Tab.STUFF) &&
             root.findViewById<EditText>(R.id.kids_child_search)?.hasFocus() == true
@@ -484,6 +515,12 @@ class KidsChildActivity : AppCompatActivity() {
                 input.setSelection(input.text.length)
             }
         }
+        val defaultFocus = when (activeTab) {
+            Tab.HOME -> root.findViewWithTag<View>("kids-category-${category.name}")
+            Tab.SEARCH, Tab.STUFF -> root.findViewById(R.id.kids_child_search)
+            Tab.PROFILE -> null
+        }
+        KidsTvNavigation.restore(windowContent, oldFocus, defaultFocus)
         consumeIncomingVideo(state)
     }
 
@@ -627,6 +664,7 @@ class KidsChildActivity : AppCompatActivity() {
         intro.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(if (isLandscape()) 8 else 24) })
         if (!isLandscape()) addFlexibleSpace(root, 0.6f)
         val profiles = ProfileManager.visibleProfiles(state)
+        var initialProfile: View? = null
         if (profiles.isEmpty()) {
             if (isLandscape()) {
                 body.addView(KidsUi.text(this, getString(R.string.kids_no_enabled_profiles), 15f, Color.WHITE), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -647,10 +685,12 @@ class KidsChildActivity : AppCompatActivity() {
                 }
                 val size = if (isLandscape()) 72 else 100
                 val avatar = KidsAvatars.view(this, profile, size, selected).apply {
+                    tag = "kids-profile-${profile.id}"
                     isClickable = true
                     isFocusable = true
                     setOnClickListener { selectFromPicker(state, profile) }
                 }
+                if (selected || initialProfile == null) initialProfile = avatar
                 column.addView(avatar, LinearLayout.LayoutParams(dp(size), dp(size)))
                 val choice = KidsUi.button(this, profile.name, KidsUi.ButtonStyle.GHOST).apply {
                     textSize = 16f
@@ -662,6 +702,7 @@ class KidsChildActivity : AppCompatActivity() {
                     maxLines = 1
                     ellipsize = TextUtils.TruncateAt.END
                     setOnClickListener { selectFromPicker(state, profile) }
+                    if (KidsTvNavigation.isTv(context)) isFocusable = false
                 }
                 column.addView(choice, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)))
                 if (canEdit) {
@@ -706,6 +747,7 @@ class KidsChildActivity : AppCompatActivity() {
         }
         footer.addView(parentIcon(), LinearLayout.LayoutParams(dp(48), dp(48)))
         root.addView(footer)
+        KidsTvNavigation.requestFocus(initialProfile ?: footer.findViewById(R.id.kids_parent_entry))
     }
 
     private fun selectFromPicker(state: KidsState, profile: ChildProfile) {
@@ -748,6 +790,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun showProfileEditor(state: KidsState) {
+        val oldFocus = if (screen == Screen.PROFILE_EDIT) KidsTvNavigation.remember(currentFocus) else null
         val profile = state.profiles.firstOrNull { it.id == state.selectedProfileId && it.enabled && it.remainingMillis > 0 }
         if (profile == null) {
             display(state)
@@ -829,6 +872,7 @@ class KidsChildActivity : AppCompatActivity() {
         root.addView(carousel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(if (isLandscape()) 56 else 80)))
         val selectedIndex = KidsAvatars.options.indexOfFirst { it.id == profile.avatarId }.coerceAtLeast(0)
         carousel.post { carousel.smoothScrollTo(dp((selectedIndex - 1).coerceAtLeast(0) * (optionSize + optionGap)), 0) }
+        KidsTvNavigation.restore(windowContent, oldFocus, rename)
     }
 
     private fun editProfileName(profile: ChildProfile) {
@@ -883,6 +927,7 @@ class KidsChildActivity : AppCompatActivity() {
         ).forEach { (value, title) ->
             val selected = category == value
             val chip = KidsUi.button(this, getString(title), KidsUi.ButtonStyle.GHOST).apply {
+                tag = "kids-category-${value.name}"
                 gravity = Gravity.CENTER
                 isSelected = selected
                 minimumHeight = dp(chipHeight)
@@ -1088,6 +1133,10 @@ class KidsChildActivity : AppCompatActivity() {
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
             isClickable = true
+            if (KidsTvNavigation.isTv(context)) {
+                isFocusable = true
+                contentDescription = getString(R.string.kids_channel_label, title)
+            }
             setOnClickListener { showSource(state, profile, source) }
         }
         val imageSize = (imageHeight * 4 / 5).coerceAtLeast(48)
@@ -1097,6 +1146,7 @@ class KidsChildActivity : AppCompatActivity() {
             clipToOutline = true
             contentDescription = getString(R.string.kids_channel_label, title)
             setOnClickListener { showSource(state, profile, source) }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
         }
         CoilHelper.loadAvatar(image, item?.thumbnailUrl)
         card.addView(
@@ -1122,6 +1172,7 @@ class KidsChildActivity : AppCompatActivity() {
             setPadding(dp(8), dp(4), dp(8), 0)
             contentDescription = getString(R.string.kids_channel_label, title)
             setOnClickListener { showSource(state, profile, source) }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
         }
         textColumn.addView(titleButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val subtitle = KidsUi.text(this, getString(R.string.kids_parent_kind_channel), 13f, 0xFFB7B7B7.toInt()).apply { gravity = Gravity.CENTER }
@@ -1146,12 +1197,17 @@ class KidsChildActivity : AppCompatActivity() {
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
             isClickable = true
+            if (KidsTvNavigation.isTv(context)) {
+                isFocusable = true
+                contentDescription = getString(R.string.kids_playlist_label, title)
+            }
             setOnClickListener { showSource(state, profile, source) }
         }
         val stack = FrameLayout(this).apply {
             tag = "kids-playlist-thumbnail-${source.id.id}"
             contentDescription = getString(R.string.kids_playlist_label, title)
             setOnClickListener { showSource(state, profile, source) }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
         }
         listOf(0xFF62636A.toInt() to 16, 0xFF414249.toInt() to 8).forEachIndexed { index, (color, inset) ->
             stack.addView(
@@ -1197,6 +1253,7 @@ class KidsChildActivity : AppCompatActivity() {
             setPadding(dp(12), dp(8), dp(8), dp(2))
             contentDescription = getString(R.string.kids_playlist_label, title)
             setOnClickListener { showSource(state, profile, source) }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
         }
         labels.addView(name, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         val subtitle = item?.uploaderName?.let { getString(R.string.kids_playlist_with_uploader, it) } ?: getString(R.string.kids_parent_kind_playlist)
@@ -1217,12 +1274,18 @@ class KidsChildActivity : AppCompatActivity() {
             background = KidsUi.shape(this@KidsChildActivity, 0xFF202020.toInt(), 16)
             clipToOutline = true
             elevation = dp(2).toFloat()
+            if (KidsTvNavigation.isTv(context)) {
+                isFocusable = true
+                contentDescription = getString(R.string.kids_watch_description, item.title)
+                setOnClickListener { action() }
+            }
         }
         val thumbnail = FrameLayout(this).apply {
             tag = "kids-thumbnail-${item.id.id}"
             background = KidsUi.shape(this@KidsChildActivity, KidsUi.purpleLight, 12)
             clipToOutline = true
             setOnClickListener { action() }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
             contentDescription = getString(R.string.kids_watch_description, item.title)
         }
         val image = ImageView(this).apply {
@@ -1249,6 +1312,7 @@ class KidsChildActivity : AppCompatActivity() {
             ellipsize = TextUtils.TruncateAt.END
             minimumHeight = dp(56)
             setOnClickListener { action() }
+            if (KidsTvNavigation.isTv(context)) isFocusable = false
         }
         card.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         return card
@@ -1308,6 +1372,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun showSource(state: KidsState, profile: ChildProfile, source: StoredSource, shown: Int = RESULT_PAGE_SIZE, resetScroll: Boolean = true) {
+        val oldFocus = if (screen == Screen.SOURCE && openSource == (source.kind to source.id)) KidsTvNavigation.remember(currentFocus) else null
         screen = Screen.SOURCE
         openSource = source.kind to source.id
         renderedHomeState = state
@@ -1315,7 +1380,7 @@ class KidsChildActivity : AppCompatActivity() {
         if (resetScroll) contentScroll.scrollTo(0, 0)
         renderHeader(profile)
         renderNavigation()
-        button(getString(R.string.kids_back_to_library)) {
+        val back = button(getString(R.string.kids_back_to_library)) {
             contentScroll.scrollTo(0, 0)
             display(displayedState ?: state)
         }
@@ -1331,6 +1396,8 @@ class KidsChildActivity : AppCompatActivity() {
             startVideo(profile.id, item.id, source.id.takeIf { source.kind == SourceKind.PLAYLIST }, emptySet(), automatic = false)
         }
         if (videos.size > shown) button(getString(R.string.kids_parent_more)) { showSource(state, profile, source, shown + RESULT_PAGE_SIZE, resetScroll = false) }
+        val firstVideo = items.firstOrNull()?.let { root.findViewWithTag<View>("kids-video-card-${it.id.id}") }
+        KidsTvNavigation.restore(windowContent, oldFocus, firstVideo ?: back)
     }
 
     /** Extraction happens off the UI thread, with an approval check both before and after it. */
@@ -1481,6 +1548,11 @@ class KidsChildActivity : AppCompatActivity() {
         if (request.positionMillis > 0) player.seekTo(request.positionMillis)
         player.playWhenReady = request.playWhenReady
         setPlayerFullscreen(isLandscape() || restoreFullscreen)
+        if (KidsTvNavigation.isTv(this)) {
+            view.isFocusable = true
+            view.showController()
+            KidsTvNavigation.requestFocus(view.findViewById(if (player.playWhenReady) PlayerUiR.id.exo_pause else PlayerUiR.id.exo_play))
+        }
         restoreFullscreen = false
     }
 
@@ -1777,6 +1849,7 @@ class KidsChildActivity : AppCompatActivity() {
     }
 
     private fun stopPlayback() {
+        tvCenterDown = false
         playbackGeneration++
         pendingPlayback = null
         resumePlaybackWhenVisible = false

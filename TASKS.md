@@ -280,3 +280,16 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
 - [x] Adapt the number of columns to the available width, including three on
   phone landscape and additional columns on larger tablets.
 - [ ] Review the responsive grid on a physical phone and tablet.
+
+## 11. Google TV remote navigation
+
+- [x] Provide visible directional focus and sensible starting focus on TV,
+  including profile selection, cards, setup, and Parent mode.
+- [x] Navigate parent search filters, select individual source videos, and
+  approve them for a profile using remote controls on a Google TV emulator.
+- [x] Test live playback, pause and resume, seeking, playlist Next with
+  autoplay off, and Back using remote keys on a Google TV emulator.
+- [x] Verify first-run setup and child profile and playlist navigation on a
+  Google TV emulator.
+- [ ] Review remote navigation, text entry, playback, and screen visibility on
+  a physical Google TV or Android TV device.

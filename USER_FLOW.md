@@ -157,3 +157,14 @@ An explicitly hidden video stays unavailable even if an approved channel or
 playlist also includes it. When refresh is unavailable, the app still applies
 local approval removals and hidden content to the last known library. After the
 session, the parent can update the configuration or restore internet access.
+
+## Google TV and Android TV
+
+Use the remote's directional buttons to move the focus outline and Select to
+open the focused profile, card, or control. In the player, Select on the video
+or the play/pause control pauses or resumes playback. The progress bar supports
+seeking with Left and Right, and the playlist Next button works even when
+autoplay is off. Back returns to the previous screen or the child library.
+
+Each device keeps its own profiles, approvals, and session limits. The TV setup
+does not automatically synchronize them with a phone.

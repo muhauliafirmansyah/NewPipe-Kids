@@ -5,6 +5,7 @@ package org.schabi.newpipe.kids
 
 import android.app.Activity
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
@@ -16,17 +17,23 @@ import org.schabi.newpipe.R
 
 /** First-run parent setup. The caller is responsible for opening it before the child UI. */
 class KidsSetupActivity : AppCompatActivity() {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean = KidsTvNavigation.moveFromInput(this, event) || super.dispatchKeyEvent(event)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        if (KidsTvNavigation.isTv(this)) window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         setContentView(R.layout.activity_kids_setup)
+        KidsTvNavigation.install(this)
         val name = findViewById<EditText>(R.id.kids_profile_name)
         val minutes = findViewById<EditText>(R.id.kids_session_minutes)
         val pin = findViewById<EditText>(R.id.kids_parent_pin)
         val confirmation = findViewById<EditText>(R.id.kids_parent_pin_confirm)
         val error = findViewById<TextView>(R.id.kids_setup_error)
         val create = findViewById<Button>(R.id.kids_setup_create)
+        name.setSingleLine(true)
         listOf(name, minutes, pin, confirmation).forEach(KidsUi::input)
+        KidsTvNavigation.requestFocus(name)
         create.isAllCaps = false
         create.textSize = 15f
         create.backgroundTintList = null

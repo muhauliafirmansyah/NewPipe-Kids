@@ -10,6 +10,7 @@ import android.os.Looper
 import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -22,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.exoplayer2.ExoPlayer
@@ -56,6 +58,11 @@ class KidsParentActivity : AppCompatActivity() {
     private var approvedListMarker: View? = null
     private var foreground = false
     private var refreshGeneration = 0
+    private var tvBack: (() -> Unit)? = null
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        return KidsTvNavigation.moveFromInput(this, event) || super.dispatchKeyEvent(event)
+    }
 
     private data class SourceBrowseState(
         val source: ParentSearchItem,
@@ -68,6 +75,7 @@ class KidsParentActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        if (KidsTvNavigation.isTv(this)) window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = KidsUi.background()
@@ -95,6 +103,17 @@ class KidsParentActivity : AppCompatActivity() {
         page.addView(toolbar)
         page.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(page)
+        KidsTvNavigation.install(this)
+        if (KidsTvNavigation.isTv(this)) {
+            onBackPressedDispatcher.addCallback(
+                this,
+                object : OnBackPressedCallback(true) {
+                    override fun handleOnBackPressed() {
+                        if (!busy) tvBack?.invoke() ?: finish()
+                    }
+                }
+            )
+        }
         showUnlock()
     }
 
@@ -126,14 +145,15 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showUnlock() {
+        tvBack = null
         root.removeAllViews()
         label(getString(R.string.kids_parent_title))
         label(getString(R.string.kids_parent_unlock_caption))
         val input = EditText(this).apply {
             hint = getString(R.string.kids_parent_pin_hint)
+            setSingleLine(true)
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
             isSaveEnabled = false
-            setSingleLine(true)
             KidsUi.input(this)
         }
         addBlock(input, 18)
@@ -157,9 +177,11 @@ class KidsParentActivity : AppCompatActivity() {
         unlock.id = R.id.kids_parent_unlock_button
         input.id = R.id.kids_parent_unlock_pin
         error.id = R.id.kids_parent_error
+        KidsTvNavigation.requestFocus(input)
     }
 
     private fun showProfiles(state: KidsState) {
+        tvBack = { loadApproved() }
         root.removeAllViews()
         label(getString(R.string.kids_parent_profiles))
         label(getString(R.string.kids_parent_shorts_caption))
@@ -176,11 +198,13 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showApproved(state: KidsState) {
+        tvBack = null
         root.removeAllViews()
         approvedListMarker = label(getString(R.string.kids_parent_approved))
         label(getString(R.string.kids_parent_caption))
-        button(getString(R.string.kids_parent_profiles)) { showProfiles(state) }
+        val profiles = button(getString(R.string.kids_parent_profiles)) { showProfiles(state) }
         button(getString(R.string.kids_parent_add_content)) { showSearch() }
+        KidsTvNavigation.requestFocus(profiles)
         if (state.profiles.isEmpty()) {
             label(getString(R.string.kids_parent_no_profiles))
             return
@@ -265,6 +289,7 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showApprovedSourceVideos(profile: ChildProfile, source: StoredSource, title: String, shown: Int = RESULT_PAGE_SIZE) {
+        tvBack = { loadApproved() }
         val state = KidsStorage.get(applicationContext).read()
         val latestProfile = state.profiles.firstOrNull { it.id == profile.id } ?: return showApproved(state)
         val direct = latestProfile.sources.firstOrNull { it.kind == source.kind && it.id == source.id }
@@ -290,6 +315,8 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showSearch(query: String = "", results: List<ParentSearchItem> = emptyList(), page: ParentSearchPage? = null) {
+        tvBack = { loadApproved() }
+        val oldFocus = KidsTvNavigation.remember(currentFocus)
         searchQuery = query
         searchResults = results
         searchPage = page
@@ -324,11 +351,17 @@ class KidsParentActivity : AppCompatActivity() {
             Triple(ParentContentKind.CHANNEL, R.string.kids_category_channels, R.id.kids_parent_filter_channels),
             Triple(ParentContentKind.PLAYLIST, R.string.kids_category_playlists, R.id.kids_parent_filter_playlists)
         )
+        val selectedFilterId = kinds.firstOrNull { it.first == searchKind }?.third ?: R.id.kids_parent_filter_videos
+        if (KidsTvNavigation.isTv(this)) input.nextFocusDownId = selectedFilterId
         kinds.filter { it.first != null || searchServiceId != ServiceList.PeerTube.serviceId }.forEach { (kind, title, viewId) ->
             val chip = KidsUi.button(this, getString(title), if (searchKind == kind) KidsUi.ButtonStyle.SELECTED else KidsUi.ButtonStyle.SOFT).apply {
                 id = viewId
                 gravity = Gravity.CENTER
                 isSelected = searchKind == kind
+                if (KidsTvNavigation.isTv(context)) {
+                    nextFocusUpId = R.id.kids_parent_search_input
+                    nextFocusDownId = R.id.kids_parent_search_button
+                }
                 setOnClickListener {
                     if (!busy && searchKind != kind) {
                         val text = input.text.toString().trim()
@@ -356,6 +389,7 @@ class KidsParentActivity : AppCompatActivity() {
             if (text.isNotEmpty()) performSearch(text)
         }
         search.id = R.id.kids_parent_search_button
+        if (KidsTvNavigation.isTv(this)) search.nextFocusUpId = selectedFilterId
         if (results.isNotEmpty()) label(getString(R.string.kids_parent_search_results))
         if (query.isNotEmpty() && results.isEmpty() && page != null) {
             val message = if (searchServiceId == ServiceList.MediaCCC.serviceId && searchKind == ParentContentKind.PLAYLIST) {
@@ -375,6 +409,7 @@ class KidsParentActivity : AppCompatActivity() {
                 )
             }
         }
+        KidsTvNavigation.restore(window.decorView, oldFocus, input)
     }
 
     private fun performSearch(query: String) {
@@ -466,10 +501,12 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showSourceBrowser(browse: SourceBrowseState) {
+        tvBack = { showSearch(searchQuery, searchResults, searchPage) }
+        val oldFocus = KidsTvNavigation.remember(currentFocus)
         val item = browse.source
         val kind = if (item.kind == ParentContentKind.CHANNEL) SourceKind.CHANNEL else SourceKind.PLAYLIST
         root.removeAllViews()
-        button(getString(R.string.kids_parent_back_search)) { showSearch(searchQuery, searchResults, searchPage) }
+        val back = button(getString(R.string.kids_parent_back_search)) { showSearch(searchQuery, searchResults, searchPage) }
         label(item.title)
         label(getString(R.string.kids_parent_select_videos))
         label(sourceScope(kind, item.id))
@@ -497,6 +534,7 @@ class KidsParentActivity : AppCompatActivity() {
             }
         }
         if (browse.videos.isEmpty() && browse.next == null) label(getString(R.string.kids_parent_source_empty))
+        var firstCheckbox: CheckBox? = null
         browse.videos.values.forEach { video ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -513,6 +551,7 @@ class KidsParentActivity : AppCompatActivity() {
                     updateSelection()
                 }
             }
+            if (firstCheckbox == null) firstCheckbox = checkbox
             row.addView(checkbox)
             val image = ImageView(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -556,6 +595,7 @@ class KidsParentActivity : AppCompatActivity() {
                 )
             }
         }
+        KidsTvNavigation.restore(window.decorView, oldFocus, firstCheckbox ?: back)
     }
 
     private fun showVideoPreview(id: StoredContentId, title: String) {

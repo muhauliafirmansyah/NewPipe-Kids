@@ -4,6 +4,7 @@
 package org.schabi.newpipe.kids
 
 import android.os.Bundle
+import android.text.method.PasswordTransformationMethod
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -293,6 +294,7 @@ class KidsParentActivityTest {
             ActivityScenario.launch(KidsParentActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
                     assertTrue(findButton(activity.window.decorView, "Test child") == null)
+                    assertTrue(activity.findViewById<EditText>(R.id.kids_parent_unlock_pin).transformationMethod is PasswordTransformationMethod)
                     activity.findViewById<EditText>(R.id.kids_parent_unlock_pin).setText("9999")
                     activity.findViewById<Button>(R.id.kids_parent_unlock_button).performClick()
                 }

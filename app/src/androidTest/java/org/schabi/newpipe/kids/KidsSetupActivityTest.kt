@@ -3,6 +3,7 @@
  */
 package org.schabi.newpipe.kids
 
+import android.text.method.PasswordTransformationMethod
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -27,6 +28,8 @@ class KidsSetupActivityTest {
                 val confirm = activity.findViewById<EditText>(R.id.kids_parent_pin_confirm)
                 val create = activity.findViewById<Button>(R.id.kids_setup_create)
                 val error = activity.findViewById<TextView>(R.id.kids_setup_error)
+                assertTrue(pin.transformationMethod is PasswordTransformationMethod)
+                assertTrue(confirm.transformationMethod is PasswordTransformationMethod)
                 create.performClick()
                 assertEquals(activity.getString(R.string.kids_setup_name_error), error.text.toString())
                 name.setText("Test")
