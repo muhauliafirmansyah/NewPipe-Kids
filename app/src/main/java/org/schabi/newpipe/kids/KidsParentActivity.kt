@@ -14,11 +14,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.exoplayer2.ExoPlayer
@@ -44,11 +47,23 @@ class KidsParentActivity : AppCompatActivity() {
     private var busy = false
     private var selectedProfileId: String? = null
     private var searchServiceId = ServiceList.YouTube.serviceId
+    private var searchKind: ParentContentKind? = null
+    private var searchQuery = ""
+    private var searchResults: List<ParentSearchItem> = emptyList()
+    private var searchPage: ParentSearchPage? = null
     private var previewDialog: AlertDialog? = null
     private var previewPlayer: ExoPlayer? = null
     private var approvedListMarker: View? = null
     private var foreground = false
     private var refreshGeneration = 0
+
+    private data class SourceBrowseState(
+        val source: ParentSearchItem,
+        val videos: LinkedHashMap<StoredContentId, ParentSearchItem> = linkedMapOf(),
+        val selected: MutableSet<StoredContentId> = linkedSetOf(),
+        var next: ParentSourceCursor? = null,
+        var incomplete: Boolean = false
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -275,6 +290,9 @@ class KidsParentActivity : AppCompatActivity() {
     }
 
     private fun showSearch(query: String = "", results: List<ParentSearchItem> = emptyList(), page: ParentSearchPage? = null) {
+        searchQuery = query
+        searchResults = results
+        searchPage = page
         root.removeAllViews()
         label(getString(R.string.kids_parent_search_title))
         button(getString(R.string.kids_parent_back_approved)) { loadApproved() }
@@ -284,6 +302,7 @@ class KidsParentActivity : AppCompatActivity() {
             AlertDialog.Builder(this).setTitle(R.string.kids_parent_choose_service)
                 .setItems(services.map { it.serviceInfo.name }.toTypedArray()) { _, index ->
                     searchServiceId = services[index].serviceId
+                    searchKind = if (searchServiceId == ServiceList.PeerTube.serviceId) ParentContentKind.VIDEO else null
                     showSearch()
                 }.show()
         }
@@ -298,28 +317,74 @@ class KidsParentActivity : AppCompatActivity() {
             KidsUi.input(this)
         }
         addBlock(input, 10)
+        val filters = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val kinds = listOf(
+            Triple(null, R.string.kids_category_all, R.id.kids_parent_filter_all),
+            Triple(ParentContentKind.VIDEO, R.string.kids_category_videos, R.id.kids_parent_filter_videos),
+            Triple(ParentContentKind.CHANNEL, R.string.kids_category_channels, R.id.kids_parent_filter_channels),
+            Triple(ParentContentKind.PLAYLIST, R.string.kids_category_playlists, R.id.kids_parent_filter_playlists)
+        )
+        kinds.filter { it.first != null || searchServiceId != ServiceList.PeerTube.serviceId }.forEach { (kind, title, viewId) ->
+            val chip = KidsUi.button(this, getString(title), if (searchKind == kind) KidsUi.ButtonStyle.SELECTED else KidsUi.ButtonStyle.SOFT).apply {
+                id = viewId
+                gravity = Gravity.CENTER
+                isSelected = searchKind == kind
+                setOnClickListener {
+                    if (!busy && searchKind != kind) {
+                        val text = input.text.toString().trim()
+                        searchKind = kind
+                        if (text.isEmpty()) {
+                            showSearch()
+                        } else {
+                            showSearch(text)
+                            performSearch(text)
+                        }
+                    }
+                }
+            }
+            filters.addView(chip, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)).apply { marginEnd = dp(8) })
+        }
+        addBlock(
+            HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                addView(filters)
+            },
+            10
+        )
         val search = button(getString(R.string.kids_parent_search)) {
             val text = input.text.toString().trim()
-            if (text.isNotEmpty()) {
-                runTask(
-                    action = { ParentContentSearch.firstPage(text, searchServiceId) },
-                    onError = ::showSearchError,
-                    onSuccess = { showSearch(text, it.items, it) }
-                )
-            }
+            if (text.isNotEmpty()) performSearch(text)
         }
         search.id = R.id.kids_parent_search_button
         if (results.isNotEmpty()) label(getString(R.string.kids_parent_search_results))
+        if (query.isNotEmpty() && results.isEmpty() && page != null) {
+            val message = if (searchServiceId == ServiceList.MediaCCC.serviceId && searchKind == ParentContentKind.PLAYLIST) {
+                R.string.kids_parent_search_unsupported
+            } else {
+                R.string.kids_parent_search_empty
+            }
+            label(getString(message))
+        }
         results.forEach { item -> contentButton(item, item.title) { showSearchItem(item) }.tag = "kids-result-${item.kind.name}" }
         if (page?.next != null) {
             button(getString(R.string.kids_parent_more)) {
                 runTask(
                     action = { ParentContentSearch.nextPage(page) },
                     onError = ::showSearchError,
-                    onSuccess = { showSearch(query, results + it.items, it) }
+                    onSuccess = { showSearch(query, (results + it.items).distinctBy { item -> item.kind to item.id }, it) }
                 )
             }
         }
+    }
+
+    private fun performSearch(query: String) {
+        val service = searchServiceId
+        val kind = searchKind
+        runTask(
+            action = { ParentContentSearch.firstPage(query, service, kind) },
+            onError = ::showSearchError,
+            onSuccess = { showSearch(query, it.items, it) }
+        )
     }
 
     private fun choosePeerTubeServer() {
@@ -351,7 +416,7 @@ class KidsParentActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun showSearchItem(item: ParentSearchItem) {
+    private fun showSearchItem(item: ParentSearchItem, onApproved: (() -> Unit)? = null) {
         val message = if (item.kind == ParentContentKind.VIDEO) {
             item.url
         } else {
@@ -363,7 +428,7 @@ class KidsParentActivity : AppCompatActivity() {
             .setNeutralButton(R.string.kids_parent_open) { _, _ ->
                 if (item.kind == ParentContentKind.VIDEO) showVideoPreview(item.id, item.title) else browseSearchSource(item)
             }
-            .setPositiveButton(R.string.kids_parent_approve) { _, _ -> chooseProfiles(item) }.show()
+            .setPositiveButton(R.string.kids_parent_approve) { _, _ -> chooseProfiles(item, onApproved) }.show()
     }
 
     private fun sourceScope(kind: SourceKind, id: StoredContentId): String {
@@ -381,18 +446,116 @@ class KidsParentActivity : AppCompatActivity() {
     private fun browseSearchSource(item: ParentSearchItem) {
         val kind = if (item.kind == ParentContentKind.CHANNEL) SourceKind.CHANNEL else SourceKind.PLAYLIST
         runTask(
-            action = { ExtractorSourceFetcher().fetchAll(kind, item.id) },
+            action = { ParentSourceBrowser.firstPage(kind, item.id) },
             onError = ::showSearchError,
-            onSuccess = { videos ->
-                root.removeAllViews()
-                button(getString(R.string.kids_parent_back_search)) { showSearch() }
-                label(item.title)
-                label(sourceScope(kind, item.id))
-                button(getString(R.string.kids_parent_approve)) { chooseProfiles(item) }
-                if (videos.isEmpty()) label(getString(R.string.kids_parent_source_empty))
-                videos.forEach { video -> button(video.title) { showVideoPreview(video.id, video.title) } }
+            onSuccess = { page ->
+                val browse = SourceBrowseState(item)
+                appendSourcePage(browse, page)
+                showSourceBrowser(browse)
             }
         )
+    }
+
+    private fun appendSourcePage(browse: SourceBrowseState, page: ParentSourcePage) {
+        page.videos.forEach { video ->
+            val existing = browse.videos[video.id]
+            browse.videos[video.id] = if (existing?.isShortForm == true && !video.isShortForm) video.copy(isShortForm = true) else video
+        }
+        browse.next = page.next
+        browse.incomplete = browse.incomplete || page.incomplete
+    }
+
+    private fun showSourceBrowser(browse: SourceBrowseState) {
+        val item = browse.source
+        val kind = if (item.kind == ParentContentKind.CHANNEL) SourceKind.CHANNEL else SourceKind.PLAYLIST
+        root.removeAllViews()
+        button(getString(R.string.kids_parent_back_search)) { showSearch(searchQuery, searchResults, searchPage) }
+        label(item.title)
+        label(getString(R.string.kids_parent_select_videos))
+        label(sourceScope(kind, item.id))
+        if (browse.incomplete) label(getString(R.string.kids_parent_source_partial))
+        button(getString(if (kind == SourceKind.CHANNEL) R.string.kids_parent_approve_channel else R.string.kids_parent_approve_playlist)) {
+            chooseProfiles(item)
+        }
+        val approveSelection = {
+            val videos = browse.videos.values.filter { it.id in browse.selected }
+            chooseProfiles(videos) {
+                browse.selected.clear()
+                showSourceBrowser(browse)
+                Toast.makeText(this, R.string.kids_parent_videos_approved, Toast.LENGTH_SHORT).show()
+            }
+        }
+        val selected = button(getString(R.string.kids_parent_approve_selected, browse.selected.size), approveSelection).apply {
+            id = R.id.kids_parent_approve_selected
+            isEnabled = browse.selected.isNotEmpty()
+        }
+        var bottomSelected: Button? = null
+        fun updateSelection() {
+            listOfNotNull(selected, bottomSelected).forEach {
+                it.text = getString(R.string.kids_parent_approve_selected, browse.selected.size)
+                it.isEnabled = browse.selected.isNotEmpty()
+            }
+        }
+        if (browse.videos.isEmpty() && browse.next == null) label(getString(R.string.kids_parent_source_empty))
+        browse.videos.values.forEach { video ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                background = KidsUi.shape(this@KidsParentActivity, Color.WHITE, 16, KidsUi.border)
+                setPadding(dp(4), dp(6), dp(8), dp(6))
+            }
+            val checkbox = CheckBox(this).apply {
+                tag = "kids-source-select-${video.id.id}"
+                contentDescription = getString(R.string.kids_parent_select_video, video.title)
+                isChecked = video.id in browse.selected
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) browse.selected.add(video.id) else browse.selected.remove(video.id)
+                    updateSelection()
+                }
+            }
+            row.addView(checkbox)
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = KidsUi.shape(this@KidsParentActivity, KidsUi.purpleLight, 8)
+                clipToOutline = true
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            CoilHelper.loadThumbnail(image, video.thumbnailUrl)
+            row.addView(image, LinearLayout.LayoutParams(dp(72), dp(48)))
+            val title = KidsUi.button(this, video.title, KidsUi.ButtonStyle.GHOST).apply {
+                tag = "kids-source-video-${video.id.id}"
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+                setOnClickListener {
+                    if (!busy) {
+                        showSearchItem(video) {
+                            browse.selected.remove(video.id)
+                            showSourceBrowser(browse)
+                            Toast.makeText(this@KidsParentActivity, R.string.kids_parent_videos_approved, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+            row.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addBlock(row, 10)
+        }
+        if (browse.videos.isNotEmpty()) {
+            bottomSelected = button(getString(R.string.kids_parent_approve_selected, browse.selected.size), approveSelection).apply {
+                isEnabled = browse.selected.isNotEmpty()
+            }
+        }
+        browse.next?.let { cursor ->
+            button(getString(R.string.kids_parent_more)) {
+                runTask(
+                    action = { ParentSourceBrowser.nextPage(cursor) },
+                    onError = ::showSearchError,
+                    onSuccess = { page ->
+                        appendSourcePage(browse, page)
+                        showSourceBrowser(browse)
+                    }
+                )
+            }
+        }
     }
 
     private fun showVideoPreview(id: StoredContentId, title: String) {
@@ -439,7 +602,10 @@ class KidsParentActivity : AppCompatActivity() {
         )
     }
 
-    private fun chooseProfiles(item: ParentSearchItem) {
+    private fun chooseProfiles(item: ParentSearchItem, onApproved: (() -> Unit)? = null) = chooseProfiles(listOf(item), onApproved)
+
+    private fun chooseProfiles(items: List<ParentSearchItem>, onApproved: (() -> Unit)? = null) {
+        if (items.isEmpty()) return
         val state = KidsStorage.get(applicationContext).read()
         val profiles = state.profiles
         if (profiles.isEmpty()) {
@@ -457,37 +623,39 @@ class KidsParentActivity : AppCompatActivity() {
                     dialog.setTitle(R.string.kids_parent_select_required)
                 } else {
                     dialog.dismiss()
-                    approveSearchItem(item, ids)
+                    approveSearchItems(items, ids, onApproved)
                 }
             }
         }
         dialog.show()
     }
 
-    private fun approveSearchItem(item: ParentSearchItem, ids: Set<String>) {
+    private fun approveSearchItems(items: List<ParentSearchItem>, ids: Set<String>, onApproved: (() -> Unit)?) {
         val code = parentPin ?: return
+        val source = items.singleOrNull()?.takeIf { it.kind != ParentContentKind.VIDEO }
         runTask(
             action = {
                 val storage = KidsStorage.get(applicationContext)
-                val saved = ParentSettings(storage).approveSearchItem(code, ids, item)
-                val sourceKind = when (item.kind) {
+                val parent = ParentSettings(storage)
+                val saved = if (source == null) parent.approveSearchVideos(code, ids, items) else parent.approveSearchItem(code, ids, source)
+                val sourceKind = when (source?.kind) {
                     ParentContentKind.CHANNEL -> SourceKind.CHANNEL
                     ParentContentKind.PLAYLIST -> SourceKind.PLAYLIST
-                    ParentContentKind.VIDEO -> null
+                    else -> null
                 }
                 if (sourceKind == null) {
                     Pair(saved, true)
                 } else {
-                    val refreshed = runCatching { SourceRefreshCoordinator(storage, ExtractorSourceFetcher()).refresh(ids, sourceKind, item.id) }
+                    val refreshed = runCatching { SourceRefreshCoordinator(storage, ExtractorSourceFetcher()).refresh(ids, sourceKind, requireNotNull(source).id) }
                     Pair(if (refreshed.isSuccess) refreshed.getOrThrow() else storage.read(), refreshed.isSuccess)
                 }
             },
             onError = ::showSaveError,
             onSuccess = { (state, refreshed) ->
-                showApproved(state)
-                if (item.kind == ParentContentKind.CHANNEL) {
+                if (onApproved == null) showApproved(state) else onApproved()
+                if (source?.kind == ParentContentKind.CHANNEL) {
                     sourceWorker.execute {
-                        runCatching { ChannelPlaylistRefreshCoordinator(KidsStorage.get(applicationContext), ExtractorChannelPlaylistFetcher(), ::onPlaylistsDiscovered).refresh(ids, item.id) }
+                        runCatching { ChannelPlaylistRefreshCoordinator(KidsStorage.get(applicationContext), ExtractorChannelPlaylistFetcher(), ::onPlaylistsDiscovered).refresh(ids, source.id) }
                     }
                 }
                 if (!refreshed) AlertDialog.Builder(this).setMessage(R.string.kids_parent_refresh_error).setPositiveButton(android.R.string.ok, null).show()

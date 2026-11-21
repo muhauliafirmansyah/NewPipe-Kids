@@ -87,6 +87,11 @@ Playback uses NewPipe Extractor v0.27.0 and an isolated YouTube fallback.
   - [x] Add preview and source browsing to parent search.
   - [x] Verify real channel and playlist approval and refresh on an emulator.
   - [x] Verify channel and playlist search-to-approval UI flows on an emulator.
+- [x] Filter parent search by video, channel, or playlist using the selected
+  service's search filters. Open a source and approve selected videos for
+  chosen profiles without approving the entire source.
+  - [x] Page through large sources, preserve selections, and verify individual
+    and multi-video approval, profile isolation, and search navigation on an emulator.
 - [x] Explain that channel approval includes future uploads and playlist
   approval includes future additions.
 - [x] Resolve approvals from individual videos, channels, and playlists;

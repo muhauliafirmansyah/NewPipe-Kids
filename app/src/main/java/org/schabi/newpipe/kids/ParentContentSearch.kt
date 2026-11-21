@@ -36,25 +36,42 @@ data class ParentSearchPage(
     val items: List<ParentSearchItem>,
     val query: SearchQueryHandler,
     val next: Page?,
-    val serviceId: Int
+    val serviceId: Int,
+    val kind: ParentContentKind? = null
 )
 
 /** Unrestricted discovery for a parent screen only. Never use its results directly as child content. */
 object ParentContentSearch {
-    fun firstPage(query: String, serviceId: Int = ServiceList.YouTube.serviceId): ParentSearchPage {
+    fun firstPage(query: String, serviceId: Int = ServiceList.YouTube.serviceId, kind: ParentContentKind? = null): ParentSearchPage {
         val cleaned = query.trim()
         require(cleaned.isNotEmpty()) { "Search query cannot be empty" }
         val service = VideoIdentity.service(serviceId)
-        val handler = service.searchQHFactory.fromQuery(cleaned)
+        val handler = searchHandler(cleaned, serviceId, kind)
+            ?: return ParentSearchPage(emptyList(), service.searchQHFactory.fromQuery(cleaned), null, serviceId, kind)
         val info = SearchInfo.getInfo(service, handler)
-        return ParentSearchPage(info.relatedItems.mapNotNull(::toItem).filter { it.id.serviceId == serviceId }, handler, info.nextPage, serviceId)
+        return ParentSearchPage(filterItems(info.relatedItems, serviceId, kind), handler, info.nextPage, serviceId, kind)
     }
+
+    /** Use the service's own type filter so pagination searches the selected kind. */
+    internal fun searchHandler(query: String, serviceId: Int, kind: ParentContentKind?): SearchQueryHandler? {
+        val factory = VideoIdentity.service(serviceId).searchQHFactory
+        if (kind == null) return factory.fromQuery(query)
+        val name = when (kind) {
+            ParentContentKind.VIDEO -> if (serviceId == ServiceList.MediaCCC.serviceId) "events" else "videos"
+            ParentContentKind.CHANNEL -> if (serviceId == ServiceList.MediaCCC.serviceId) "conferences" else "channels"
+            ParentContentKind.PLAYLIST -> "playlists"
+        }
+        if (name !in factory.availableContentFilter) return null
+        return factory.fromQuery(query, listOf(name), "")
+    }
+
+    private fun filterItems(items: List<InfoItem>, serviceId: Int, kind: ParentContentKind?): List<ParentSearchItem> = items.mapNotNull(::toItem).filter { it.id.serviceId == serviceId && (kind == null || it.kind == kind) }
 
     fun nextPage(previous: ParentSearchPage): ParentSearchPage {
         val next = requireNotNull(previous.next) { "No more results" }
         val info = SearchInfo.getMoreItems(VideoIdentity.service(previous.serviceId), previous.query, next)
         check(info.errors.isEmpty()) { "Search results were incomplete" }
-        return ParentSearchPage(info.items.mapNotNull(::toItem).filter { it.id.serviceId == previous.serviceId }, previous.query, info.nextPage, previous.serviceId)
+        return ParentSearchPage(filterItems(info.items, previous.serviceId, previous.kind), previous.query, info.nextPage, previous.serviceId, previous.kind)
     }
 
     /** Ignores unsupported item types and malformed URLs instead of approving them. */

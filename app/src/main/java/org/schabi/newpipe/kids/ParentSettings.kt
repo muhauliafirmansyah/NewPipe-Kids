@@ -59,6 +59,20 @@ class ParentSettings(
         approved.copy(catalog = KidsCatalog.merge(approved.catalog, listOf(item)))
     }
 
+    /** Approve a selection as individual videos in one authorized storage transaction. */
+    fun approveSearchVideos(pin: String, profiles: Set<String>, items: List<ParentSearchItem>): KidsState = authorized(pin) { state ->
+        require(items.isNotEmpty()) { "Select at least one video" }
+        items.forEach { item ->
+            require(item.kind == ParentContentKind.VIDEO) { "Only videos may be selected" }
+            require(VideoIdentity.fromUrl(item.id.serviceId, item.url) == item.id) { "Video ID mismatch" }
+        }
+        val videos = items.distinctBy { it.id }
+        val approved = videos.fold(state) { current, item ->
+            ApprovalManager.approveVideo(current, profiles, item.id)
+        }
+        approved.copy(catalog = KidsCatalog.merge(approved.catalog, videos))
+    }
+
     fun approveVideo(pin: String, profiles: Set<String>, video: StoredContentId): KidsState = authorized(pin) { ApprovalManager.approveVideo(it, profiles, video) }
 
     fun removeVideoApproval(pin: String, profiles: Set<String>, video: StoredContentId): KidsState = authorized(pin) { ApprovalManager.removeVideoApproval(it, profiles, video) }

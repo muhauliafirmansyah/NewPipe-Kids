@@ -117,4 +117,30 @@ class ParentSettingsTest {
             assertEquals(saved, store.read())
         }
     }
+
+    @Test fun `selected videos are approved atomically for selected profiles without approving their source`() {
+        val store = storage()
+        val parent = ParentSettings(store)
+        parent.setup("1234", "a", "Alex", 10)
+        parent.addProfile("1234", "b", "Sam", 10)
+        val first = ParentSearchItem(ParentContentKind.VIDEO, VideoIdentity.youtube("e_04ZrNroTo"), "First", "https://youtu.be/e_04ZrNroTo")
+        val second = ParentSearchItem(ParentContentKind.VIDEO, VideoIdentity.youtube("dQw4w9WgXcQ"), "Second", "https://youtu.be/dQw4w9WgXcQ")
+        parent.setVideoHidden("1234", setOf("a"), second.id, true)
+        val result = parent.approveSearchVideos("1234", setOf("a"), listOf(first, second, first))
+        val alex = result.profiles.first { it.id == "a" }
+        val sam = result.profiles.first { it.id == "b" }
+        assertEquals(setOf(first.id, second.id), alex.approvedVideos)
+        assertTrue(alex.sources.isEmpty())
+        assertTrue(sam.approvedVideos.isEmpty())
+        assertTrue(alex.approvedLibrary().canPlay(first.id.toContentId()))
+        assertFalse(alex.approvedLibrary().canPlay(second.id.toContentId()))
+        assertEquals(2, result.catalog.size)
+        val forged = second.copy(url = first.url)
+        try {
+            parent.approveSearchVideos("1234", setOf("a"), listOf(first, forged))
+            throw AssertionError("An invalid selection must fail")
+        } catch (_: IllegalArgumentException) {
+            assertEquals(result, store.read())
+        }
+    }
 }

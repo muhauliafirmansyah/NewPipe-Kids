@@ -75,6 +75,9 @@ Children can browse and search independently within their approved library.
 - Parents can add, rename, remove, disable, and re-enable child profiles.
 - Parents can search, browse, and review videos, channels, and playlists before
   approving them for selected child profiles.
+- Parent search can be filtered by content type. Parents can open a channel or
+  playlist, select one or more videos, and approve only those videos without
+  approving the source or its future additions.
 - Parents can assign and remove approved content for each profile.
 - Parents can browse approved videos, channels, and playlists, see the scope
   of each approval, and remove approvals.

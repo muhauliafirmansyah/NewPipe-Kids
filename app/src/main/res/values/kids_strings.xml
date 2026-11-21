@@ -129,6 +129,15 @@
     <string name="kids_parent_kind_channel">Channel</string>
     <string name="kids_parent_kind_playlist">Playlist</string>
     <string name="kids_parent_search_results">Search results</string>
+    <string name="kids_parent_search_empty">No matching results. Try another search or load more.</string>
+    <string name="kids_parent_search_unsupported">Playlist search is not available for this service.</string>
+    <string name="kids_parent_select_videos">Select videos to approve individually, or approve the entire channel or playlist.</string>
+    <string name="kids_parent_source_partial">Some videos could not be loaded. You can still approve the videos shown.</string>
+    <string name="kids_parent_approve_selected">Approve selected videos (%1$d)</string>
+    <string name="kids_parent_select_video">Select %1$s</string>
+    <string name="kids_parent_approve_channel">Approve entire channel</string>
+    <string name="kids_parent_approve_playlist">Approve entire playlist</string>
+    <string name="kids_parent_videos_approved">Selected videos approved.</string>
     <string name="kids_no_matches">No matches in your approved library.</string>
     <string name="kids_who_is_watching">Who’s\nwatching?</string>
     <string name="kids_approved_for_you">Approved for you</string>

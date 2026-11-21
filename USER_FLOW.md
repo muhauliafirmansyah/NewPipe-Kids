@@ -121,9 +121,12 @@ flowchart TD
     L --> N[Re-enable hidden content]
     L --> H[Remove an approval]
     G --> D[Add content]
-    D --> O[Search and browse videos, channels, and playlists]
+    D --> O[Search and filter videos, channels, and playlists]
     O --> E[Open content to review]
     E --> F[Select child profiles and approve]
+    E --> S[Browse channel or playlist videos]
+    S --> T[Select individual videos]
+    T --> F
     C --> I[Manage child profiles]
     I --> J[Add, rename, remove, disable, or enable profiles]
     I --> P[Change session limits or reset a session]
@@ -138,7 +141,9 @@ flowchart TD
 
 In Add content, parents choose YouTube, PeerTube, or media.ccc.de. For
 PeerTube, they can choose the server to search. The parent reviews an item and
-selects the profiles that should receive it.
+selects the profiles that should receive it. For a channel or playlist, the
+parent can approve the entire source or select individual videos to approve;
+selecting videos does not approve the source or future additions.
 
 Removing an approval removes access only when no other approval covers the
 video. If the app detects that a currently playing video is no longer covered,

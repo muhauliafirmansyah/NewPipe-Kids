@@ -5,6 +5,11 @@
     <item name="kids_parent_error" type="id" />
     <item name="kids_parent_search_input" type="id" />
     <item name="kids_parent_search_button" type="id" />
+    <item name="kids_parent_filter_all" type="id" />
+    <item name="kids_parent_filter_videos" type="id" />
+    <item name="kids_parent_filter_channels" type="id" />
+    <item name="kids_parent_filter_playlists" type="id" />
+    <item name="kids_parent_approve_selected" type="id" />
     <item name="kids_time_remaining" type="id" />
     <item name="kids_session_ended" type="id" />
     <item name="kids_child_search" type="id" />

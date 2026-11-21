@@ -67,4 +67,16 @@ class ParentContentSearchTest {
         assertEquals(VideoIdentity.fromUrl(peer, peerItem.url), ParentContentSearch.toItem(peerItem)?.id)
         assertEquals(VideoIdentity.fromUrl(ccc, cccItem.url), ParentContentSearch.toItem(cccItem)?.id)
     }
+
+    @Test fun `type filters use service search endpoints and preserve unsupported types`() {
+        val youtube = ServiceList.YouTube.serviceId
+        val peer = ServiceList.PeerTube.serviceId
+        val ccc = ServiceList.MediaCCC.serviceId
+        assertEquals(listOf("videos"), ParentContentSearch.searchHandler("music", youtube, ParentContentKind.VIDEO)?.contentFilters)
+        assertEquals(listOf("channels"), ParentContentSearch.searchHandler("music", youtube, ParentContentKind.CHANNEL)?.contentFilters)
+        assertEquals(listOf("playlists"), ParentContentSearch.searchHandler("music", peer, ParentContentKind.PLAYLIST)?.contentFilters)
+        assertEquals(listOf("events"), ParentContentSearch.searchHandler("music", ccc, ParentContentKind.VIDEO)?.contentFilters)
+        assertEquals(listOf("conferences"), ParentContentSearch.searchHandler("music", ccc, ParentContentKind.CHANNEL)?.contentFilters)
+        assertNull(ParentContentSearch.searchHandler("music", ccc, ParentContentKind.PLAYLIST))
+    }
 }
